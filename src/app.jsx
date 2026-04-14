@@ -1255,6 +1255,159 @@ function AdminCourts({tournament}) {
   );
 }
 
+// ─── EDIT TOURNAMENT MODAL ────────────────────────────────────────────────────
+function EditTournamentModal({tournament, onSave, onClose}) {
+  const [form,setForm]=useState({
+    name:tournament.name, startDate:tournament.startDate,
+    numDays:String(tournament.numDays), startTime:tournament.startTime,
+    gameDuration:String(tournament.gameDuration), restGap:String(tournament.restGap),
+    location:tournament.location, status:tournament.status,
+  });
+  const [divisions,setDivisions]=useState(tournament.divisions.map(d=>({...d,teams:d.teams.map(t=>({...t}))})));
+  const [activeDiv,setActiveDiv]=useState(tournament.divisions[0]?.id||null);
+  const [tab,setTab]=useState("details");
+  const [showAddDiv,setShowAddDiv]=useState(false);
+  const [newGrade,setNewGrade]=useState("3rd");
+  const [newGender,setNewGender]=useState("Boys");
+  const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const updTeam=(divId,teamId,field,val)=>setDivisions(ds=>ds.map(d=>d.id!==divId?d:{...d,teams:d.teams.map(t=>t.id!==teamId?t:{...t,[field]:val})}));
+  const addTeam=(divId)=>setDivisions(ds=>ds.map(d=>d.id!==divId?d:{...d,teams:[...d.teams,{id:Date.now()+Math.random(),name:"",pool:"A",wins:0,losses:0,pf:0,pa:0}]}));
+  const remTeam=(divId,teamId)=>setDivisions(ds=>ds.map(d=>d.id!==divId?d:{...d,teams:d.teams.filter(t=>t.id!==teamId)}));
+  const remDiv=(divId)=>{ setDivisions(ds=>ds.filter(d=>d.id!==divId)); setActiveDiv(divisions.find(d=>d.id!==divId)?.id||null); };
+  const addDivision=()=>{
+    const id=`div-${Date.now()}`;
+    const newDiv={id,gradeId:newGrade,gender:newGender,teams:[
+      {id:Date.now()+1,name:"",pool:"A",wins:0,losses:0,pf:0,pa:0},
+      {id:Date.now()+2,name:"",pool:"A",wins:0,losses:0,pf:0,pa:0},
+    ]};
+    setDivisions(ds=>[...ds,newDiv]);
+    setActiveDiv(id); setShowAddDiv(false); setTab("divisions");
+  };
+  const handleSave=()=>{
+    const existingGameDivIds=new Set(tournament.games.map(g=>g.divisionId));
+    const newDivs=divisions.filter(d=>!existingGameDivIds.has(d.id)&&d.teams.filter(t=>t.name.trim()).length>=2);
+    const newGames=genMatchups(newDivs);
+    onSave({...tournament,...form,numDays:parseInt(form.numDays),gameDuration:parseInt(form.gameDuration),restGap:parseInt(form.restGap),divisions,games:[...tournament.games,...newGames]});
+  };
+  const timeOpts=buildSlots("6:00 AM",18,30);
+  const div=divisions.find(d=>d.id===activeDiv);
+  return (
+    <div style={{position:"fixed",inset:0,background:"#000a",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
+      <div style={{background:C.navyMid,borderRadius:20,width:580,maxWidth:"100%",border:`1px solid ${C.sky}44`,boxShadow:`0 24px 80px #000a`,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
+        <div style={{padding:"22px 26px 14px",borderBottom:`1px solid ${C.grayL}`,flexShrink:0}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div>
+              <div style={{color:C.sky,fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase"}}>Edit Tournament</div>
+              <div style={{color:C.white,fontWeight:900,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif"}}>{tournament.name}</div>
+            </div>
+            <button onClick={onClose} style={{background:"transparent",border:"none",color:C.gray,cursor:"pointer",fontSize:22}}>×</button>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            {[{id:"details",l:"Details"},{id:"divisions",l:"Divisions & Teams"}].map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 16px",borderRadius:8,
+                border:`1px solid ${tab===t.id?C.sky:C.grayL}`,background:tab===t.id?C.sky+"22":"transparent",
+                color:tab===t.id?C.sky:C.gray,cursor:"pointer",fontWeight:700,fontSize:13}}>
+                {t.l}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{padding:26,overflowY:"auto",flex:1}}>
+          {tab==="details"&&<>
+            <Inp label="Tournament Name" value={form.name} onChange={e=>upd("name",e.target.value)}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <Inp label="Start Date" type="date" value={form.startDate} onChange={e=>upd("startDate",e.target.value)}/>
+              <Sel label="Number of Days" value={form.numDays} onChange={e=>upd("numDays",e.target.value)}>
+                {[1,2,3,4].map(n=><option key={n} value={n}>{n} Day{n>1?"s":""}</option>)}
+              </Sel>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <Sel label="First Game Start Time" value={form.startTime} onChange={e=>upd("startTime",e.target.value)}>
+                {timeOpts.map(t=><option key={t}>{t}</option>)}
+              </Sel>
+              <Sel label="Game Duration" value={form.gameDuration} onChange={e=>upd("gameDuration",e.target.value)}>
+                <option value="45">45 minutes</option><option value="60">60 minutes</option>
+                <option value="75">75 minutes</option><option value="90">90 minutes</option>
+              </Sel>
+            </div>
+            <Sel label="Min Rest Between Games" value={form.restGap} onChange={e=>upd("restGap",e.target.value)}>
+              <option value="0">No minimum rest</option><option value="60">1 hour minimum</option>
+              <option value="120">2 hour minimum</option><option value="180">3 hour minimum</option>
+            </Sel>
+            <Sel label="Status" value={form.status} onChange={e=>upd("status",e.target.value)}>
+              <option value="upcoming">Upcoming</option><option value="active">Active (Live)</option>
+              <option value="complete">Complete</option>
+            </Sel>
+            <Inp label="Location" value={form.location} onChange={e=>upd("location",e.target.value)}/>
+          </>}
+          {tab==="divisions"&&<>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:18,alignItems:"center"}}>
+              {divisions.map((d,i)=>(
+                <button key={d.id} onClick={()=>setActiveDiv(d.id)} style={{padding:"7px 14px",borderRadius:8,cursor:"pointer",
+                  fontWeight:700,fontSize:13,border:`1px solid ${activeDiv===d.id?dc(i):C.grayL}`,
+                  background:activeDiv===d.id?dc(i)+"22":"transparent",color:activeDiv===d.id?dc(i):C.gray,
+                  fontFamily:"'Barlow Condensed',sans-serif"}}>{dshort(d.gradeId,d.gender)}</button>
+              ))}
+              <Btn v="gh" onClick={()=>setShowAddDiv(s=>!s)} sx={{padding:"7px 14px",fontSize:12}}>+ Add Division</Btn>
+            </div>
+            {showAddDiv&&(
+              <div style={{background:C.navy,borderRadius:12,padding:16,marginBottom:16,border:`1px solid ${C.sky}44`}}>
+                <div style={{color:C.sky,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>New Division</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                  <Sel label="Grade" value={newGrade} onChange={e=>setNewGrade(e.target.value)}>
+                    {GD.map(g=><option key={g.id} value={g.id}>{g.s}</option>)}
+                  </Sel>
+                  <Sel label="Gender" value={newGender} onChange={e=>setNewGender(e.target.value)}>
+                    <option>Boys</option><option>Girls</option>
+                  </Sel>
+                </div>
+                <div style={{display:"flex",gap:10}}>
+                  <Btn v="gh" onClick={()=>setShowAddDiv(false)} sx={{flex:1}}>Cancel</Btn>
+                  <Btn v="pri" onClick={addDivision} sx={{flex:1}}>Add Division</Btn>
+                </div>
+              </div>
+            )}
+            {div&&(
+              <div style={{background:C.navy,borderRadius:14,padding:18,border:`1px solid ${dc(divisions.indexOf(div))}44`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                  <div style={{color:dc(divisions.indexOf(div)),fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{dlabel(div.gradeId,div.gender)}</div>
+                  <Btn v="danger" onClick={()=>remDiv(div.id)} sx={{padding:"6px 12px",fontSize:11}}>Remove Division</Btn>
+                </div>
+                {[...new Set(div.teams.map(t=>t.pool))].sort().map(pool=>(
+                  <div key={pool} style={{marginBottom:12}}>
+                    <div style={{color:C.gray,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Pool {pool}</div>
+                    {div.teams.filter(t=>t.pool===pool).map(team=>(
+                      <div key={team.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
+                        <input value={team.name} onChange={e=>updTeam(div.id,team.id,"name",e.target.value)} placeholder="Team name..."
+                          style={{flex:1,background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:14,padding:"9px 12px",outline:"none",fontFamily:"inherit"}}/>
+                        <select value={team.pool} onChange={e=>updTeam(div.id,team.id,"pool",e.target.value)}
+                          style={{background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"9px 10px",outline:"none",cursor:"pointer"}}>
+                          {["A","B","C","D"].map(p=><option key={p}>{p}</option>)}
+                        </select>
+                        <button onClick={()=>remTeam(div.id,team.id)}
+                          style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,borderRadius:8,padding:"9px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+                <button onClick={()=>addTeam(div.id)}
+                  style={{width:"100%",padding:"9px 0",background:"transparent",border:`1px dashed ${dc(divisions.indexOf(div))}66`,borderRadius:8,color:dc(divisions.indexOf(div)),cursor:"pointer",fontWeight:700,fontSize:12}}>
+                  + Add Team
+                </button>
+              </div>
+            )}
+            {!div&&!showAddDiv&&<div style={{textAlign:"center",padding:"30px 0",color:C.gray}}>No divisions yet — click "+ Add Division"</div>}
+          </>}
+          <div style={{display:"flex",gap:10,marginTop:20}}>
+            <Btn v="gh" onClick={onClose} sx={{flex:1}}>Cancel</Btn>
+            <Btn v="pri" onClick={handleSave} sx={{flex:2}}>✓ Save Changes</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── ADMIN SETTINGS TAB ───────────────────────────────────────────────────────
 function AdminSettings({logoUrl, onSaveLogoUrl}) {
   const [url,setUrl]=useState(logoUrl||"");
@@ -1679,12 +1832,7 @@ function PublicTournament({tournament, onBack}) {
     <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
       {/* Header */}
       <div style={{background:`linear-gradient(160deg,${C.navyLight},${C.navyMid})`,
-        padding:"20px 16px 0",borderBottom:`1px solid ${C.grayL}`}}>
-        <button onClick={onBack}
-          style={{background:"transparent",border:"none",color:C.sky,cursor:"pointer",
-            fontSize:13,fontWeight:700,marginBottom:14,padding:0,display:"flex",alignItems:"center",gap:6}}>
-          ← Back to Tournaments
-        </button>
+        padding:"16px 16px 0",borderBottom:`1px solid ${C.grayL}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
           <div>
             <div style={{color:C.white,fontWeight:900,fontSize:22,
@@ -2025,20 +2173,48 @@ export default function App() {
   });
 
   const onAdd=t=>{
-    saveTournamentToDB(t); // save to DB
+    saveTournamentToDB(t);
     setData(d=>({...d,tournaments:[...d.tournaments,t]}));
   };
+
+  const onEditTournament=t=>{
+    updateTournamentInDB(t);
+    setData(d=>({...d,tournaments:d.tournaments.map(x=>x.id===t.id?t:x)}));
+  };
+
+  const onDeleteTournament=async(tId)=>{
+    await sbFetch(`/tournaments?id=eq.${tId}`,{method:"DELETE"});
+    setData(d=>({...d,tournaments:d.tournaments.filter(x=>x.id!==tId)}));
+  };
+
+  // Shared logo header for public pages
+  const PublicHeader=({onBack})=>(
+    <div style={{background:C.navyMid,borderBottom:`1px solid ${C.grayL}`,padding:"0 18px",
+      display:"flex",alignItems:"center",height:60,gap:12}}>
+      {onBack&&(
+        <button onClick={onBack} style={{background:"transparent",border:"none",color:C.sky,
+          cursor:"pointer",fontSize:13,fontWeight:700,padding:0,display:"flex",alignItems:"center",gap:4}}>
+          ←
+        </button>
+      )}
+      <button onClick={()=>setSelectedTId(null)} style={{background:"transparent",border:"none",cursor:"pointer",padding:0}}>
+        {logoUrl
+          ? <img src={logoUrl} alt="Shoebox Sports" style={{height:36,maxWidth:140,objectFit:"contain"}} onError={e=>e.target.style.display="none"}/>
+          : <Logo sz={32}/>}
+      </button>
+      {onBack&&<span style={{color:C.gray,fontSize:12,fontWeight:600}}>← Back to Tournaments</span>}
+    </div>
+  );
 
   // Loading screen
   if (loading) return (
     <div style={{minHeight:"100vh",background:C.navy,display:"flex",flexDirection:"column",
       alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans',sans-serif"}}>
-      <Logo sz={60} txt/>
-      <div style={{color:C.gray,fontSize:14,marginTop:24,letterSpacing:"0.08em",textTransform:"uppercase",fontWeight:700}}>
-        Loading...
-      </div>
-      <div style={{width:40,height:3,background:C.sky,borderRadius:2,marginTop:16,
-        animation:"pulse 1.2s ease-in-out infinite"}}/>
+      {logoUrl
+        ? <img src={logoUrl} alt="Shoebox Sports" style={{maxWidth:200,maxHeight:120,objectFit:"contain",marginBottom:20}} onError={e=>e.target.style.display="none"}/>
+        : <Logo sz={60} txt/>}
+      <div style={{color:C.gray,fontSize:14,marginTop:24,letterSpacing:"0.08em",textTransform:"uppercase",fontWeight:700}}>Loading...</div>
+      <div style={{width:40,height:3,background:C.sky,borderRadius:2,marginTop:16,animation:"pulse 1.2s ease-in-out infinite"}}/>
       <style>{`@keyframes pulse{0%,100%{opacity:0.3}50%{opacity:1}}`}</style>
     </div>
   );
@@ -2052,7 +2228,10 @@ export default function App() {
   if (adminAuth) {
     return (
       <div style={{background:C.navy,minHeight:"100vh"}}>
-        <Admin data={data} onScore={onScore} onUpdateGames={onUpdateGames} onAdd={onAdd} logoUrl={logoUrl} onSaveLogoUrl={setLogoUrl}/>
+        <Admin data={data} onScore={onScore} onUpdateGames={onUpdateGames} onAdd={onAdd}
+          onEditTournament={onEditTournament} onDeleteTournament={onDeleteTournament}
+          logoUrl={logoUrl} onSaveLogoUrl={setLogoUrl}
+          onGoHome={()=>{ setAdminAuth(false); setSelectedTId(null); }}/>
         <button onClick={()=>setAdminAuth(false)}
           style={{position:"fixed",bottom:18,right:18,zIndex:999,
             background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:50,
@@ -2070,6 +2249,7 @@ export default function App() {
     const t=data.tournaments.find(x=>x.id===selectedTId);
     if (t) return (
       <div style={{background:C.navy,minHeight:"100vh"}}>
+        <PublicHeader onBack={()=>setSelectedTId(null)}/>
         <PublicTournament tournament={t} onBack={()=>setSelectedTId(null)}/>
       </div>
     );
