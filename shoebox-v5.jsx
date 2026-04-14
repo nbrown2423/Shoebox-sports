@@ -1868,7 +1868,7 @@ export default function App() {
   const [adminAuth,setAdminAuth] = useState(false);
   const [showAdminLogin,setShowAdminLogin] = useState(false);
   const [selectedTId,setSelectedTId]       = useState(null);
-  const [logoUrl,setLogoUrl]               = useState("");
+  const [logoUrl,setLogoUrl]               = useState("https://raw.githubusercontent.com/nbrown2423/Shoebox-sports/main/logo.jpg");
 
   useEffect(()=>{
     const l=document.createElement("link");
