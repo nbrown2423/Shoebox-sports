@@ -45,6 +45,139 @@ const tname  = (divs,id) => { for(const d of divs){const t=d.teams.find(x=>x.id=
 const poolSort = (teams,pool) => teams.filter(t=>t.pool===pool).sort((a,b)=>b.wins-a.wins||(b.pf-b.pa)-(a.pf-a.pa));
 
 // ─── MATCHUP GENERATOR (who plays who — no time/court assigned) ───────────────
+// ─── 3V3 CONSTANTS ────────────────────────────────────────────────────────────
+const COURTS_5V5 = ["Court 1","Court 2","Court 3","Court 4"];
+const COURTS_3V3 = ["Court 1","Court 2","Court 3","Court 4","Court 5","Court 6","Court 7","Court 8"];
+const GAME_DURATION_3V3 = 15;
+
+// ─── 3V3 MATCHUP GENERATOR ───────────────────────────────────────────────────
+// 8 teams, 2 pools of 4. Each team plays gamesPerTeam pool games.
+// Bracket: top 4 from each pool → quarterfinals (8 teams, seeded 1v8,2v7,3v6,4v5)
+// Then semis → final. Single elimination throughout.
+function gen3v3Matchups(divs, gamesPerTeam=3) {
+  let gid = Date.now();
+  const games = [];
+  divs.forEach(div => {
+    const poolA = div.teams.filter(t=>t.pool==="A");
+    const poolB = div.teams.filter(t=>t.pool==="B");
+
+    // Pool play — round robin subset for each pool
+    [["A",poolA],["B",poolB]].forEach(([pool,pts])=>{
+      if(!pts.length) return;
+      const used = new Set();
+      pts.forEach((team,idx)=>{
+        let count=0;
+        for(let j=1; j<=pts.length-1&&count<gamesPerTeam; j++){
+          const oppIdx=(idx+j)%pts.length;
+          const opp=pts[oppIdx];
+          const pairKey=[team.id,opp.id].sort().join("-");
+          if(!used.has(pairKey)){
+            used.add(pairKey);
+            games.push({id:gid++,divisionId:div.id,phase:"pool",pool,
+              homeId:team.id,awayId:opp.id,
+              dayIdx:null,court:null,time:null,
+              homeScore:null,awayScore:null,status:"upcoming"});
+            count++;
+          }
+        }
+      });
+    });
+
+    // Bracket shells: 4 quarterfinals (1v8, 2v7, 3v6, 4v5), 2 semis, 1 final
+    // Seeded after pool play: A1,A2,A3,A4 + B1,B2,B3,B4
+    // QF matchups: seed1vseed8, seed2vseed7, seed3vseed6, seed4vseed5
+    const qfMatchups = [["QF1","1v8"],["QF2","2v7"],["QF3","3v6"],["QF4","4v5"]];
+    qfMatchups.forEach(([round])=>{
+      games.push({id:gid++,divisionId:div.id,phase:"bracket",round,
+        homeId:null,awayId:null,dayIdx:null,court:null,time:null,
+        homeScore:null,awayScore:null,status:"upcoming"});
+    });
+    // Semis: winners of QF1/QF4 and QF2/QF3
+    ["Semi1","Semi2"].forEach(round=>{
+      games.push({id:gid++,divisionId:div.id,phase:"bracket",round,
+        homeId:null,awayId:null,dayIdx:null,court:null,time:null,
+        homeScore:null,awayScore:null,status:"upcoming"});
+    });
+    // Final
+    games.push({id:gid++,divisionId:div.id,phase:"bracket",round:"Final",
+      homeId:null,awayId:null,dayIdx:null,court:null,time:null,
+      homeScore:null,awayScore:null,status:"upcoming"});
+  });
+  return games;
+}
+
+// ─── 3V3 BRACKET SEEDER ──────────────────────────────────────────────────────
+function seed3v3Bracket(divisions, games) {
+  const result = [...games];
+  divisions.forEach(div=>{
+    const poolGames = result.filter(g=>g.divisionId===div.id&&g.phase==="pool");
+    const allPoolDone = poolGames.length>0&&poolGames.every(g=>g.status==="final");
+    if(!allPoolDone) return;
+
+    // Build standings per pool
+    const standingsFor=(pool)=>{
+      const teams=div.teams.filter(t=>t.pool===pool);
+      const stats={};
+      teams.forEach(t=>{stats[t.id]={id:t.id,wins:0,losses:0,pf:0,pa:0};});
+      poolGames.filter(g=>g.pool===pool&&g.status==="final").forEach(g=>{
+        if(stats[g.homeId]){stats[g.homeId].pf+=g.homeScore;stats[g.homeId].pa+=g.awayScore;}
+        if(stats[g.awayId]){stats[g.awayId].pf+=g.awayScore;stats[g.awayId].pa+=g.homeScore;}
+        if(g.homeScore>g.awayScore){if(stats[g.homeId])stats[g.homeId].wins++;if(stats[g.awayId])stats[g.awayId].losses++;}
+        else{if(stats[g.awayId])stats[g.awayId].wins++;if(stats[g.homeId])stats[g.homeId].losses++;}
+      });
+      return Object.values(stats).sort((a,b)=>b.wins-a.wins||(b.pf-b.pa)-(a.pf-a.pa));
+    };
+
+    const sA=standingsFor("A"); // A1,A2,A3,A4
+    const sB=standingsFor("B"); // B1,B2,B3,B4
+
+    // Overall seeds 1-8: A1,B1,A2,B2,A3,B3,A4,B4
+    const seeds=[
+      sA[0],sB[0],sA[1],sB[1],sA[2],sB[2],sA[3],sB[3]
+    ].filter(Boolean).map(s=>s?.id);
+
+    // QF pairings: 1v8, 2v7, 3v6, 4v5
+    const qfPairs=[
+      [seeds[0],seeds[7]],[seeds[1],seeds[6]],[seeds[2],seeds[5]],[seeds[3],seeds[4]]
+    ];
+    const qfRounds=["QF1","QF2","QF3","QF4"];
+    const divBracket=result.filter(g=>g.divisionId===div.id&&g.phase==="bracket");
+    const qfGames=divBracket.filter(g=>qfRounds.includes(g.round));
+    qfGames.forEach((g,i)=>{
+      const gi=result.findIndex(x=>x.id===g.id);
+      if(gi>=0){
+        result[gi]={...result[gi],homeId:qfPairs[i]?.[0]||null,awayId:qfPairs[i]?.[1]||null};
+      }
+    });
+
+    // Seed semis from QF results
+    const qfResults=qfRounds.map(r=>result.find(g=>g.divisionId===div.id&&g.round===r));
+    const getWinner=(g)=>!g||g.status!=="final"?null:g.homeScore>g.awayScore?g.homeId:g.awayId;
+    const semi1Game=result.find(g=>g.divisionId===div.id&&g.round==="Semi1");
+    const semi2Game=result.find(g=>g.divisionId===div.id&&g.round==="Semi2");
+    const allQFDone=qfResults.every(g=>g?.status==="final");
+    if(allQFDone){
+      if(semi1Game){
+        const i=result.findIndex(x=>x.id===semi1Game.id);
+        result[i]={...result[i],homeId:getWinner(qfResults[0]),awayId:getWinner(qfResults[3])};
+      }
+      if(semi2Game){
+        const i=result.findIndex(x=>x.id===semi2Game.id);
+        result[i]={...result[i],homeId:getWinner(qfResults[1]),awayId:getWinner(qfResults[2])};
+      }
+    }
+
+    // Seed final from semis
+    const finalGame=result.find(g=>g.divisionId===div.id&&g.round==="Final");
+    const allSemiDone=semi1Game?.status==="final"&&semi2Game?.status==="final";
+    if(allSemiDone&&finalGame){
+      const i=result.findIndex(x=>x.id===finalGame.id);
+      result[i]={...result[i],homeId:getWinner(semi1Game),awayId:getWinner(semi2Game)};
+    }
+  });
+  return result;
+}
+
 function genMatchups(divs, gamesPerTeam=null) {
   let gid = Date.now();
   const games = [];
@@ -324,7 +457,9 @@ function Logo({sz=40,txt=true}) {
 // ─── SCHEDULE BUILDER (drag & drop) ──────────────────────────────────────────
 function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
   const dates   = tDates(tournament);
-  const slots   = buildSlots(tournament.startTime, 16, tournament.gameDuration);
+  const is3v3   = tournament.type === "3v3";
+  const COURTS  = is3v3 ? COURTS_3V3 : COURTS_5V5;
+  const slots   = buildSlots(tournament.startTime, is3v3?48:24, tournament.gameDuration);
 
   const [games,   setGames]   = useState(initialGames.map(g=>({...g})));
   const [dayIdx,  setDayIdx]  = useState(0);
@@ -709,19 +844,22 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
 
 // ─── CREATE TOURNAMENT MODAL ──────────────────────────────────────────────────
 function CreateModal({onSave, onClose}) {
-  const [step,    setStep]    = useState(1);
+  const [step,    setStep]    = useState(0); // 0=type select, 1=details, 2=divs, 3=counts
+  const [type,    setType]    = useState(""); // "5v5" or "3v3"
   const [form,    setForm]    = useState({
-    name:"", startDate:"", regCloseDate:"", numDays:"2",
+    name:"", startDate:"", regCloseDate:"", numDays:"1",
     startTime:"8:00 AM", gameDuration:"60",
     location:"Shoebox Sports - Fenton, MI",
   });
-  const [selDivs,  setSelDivs]  = useState([]);
-  const [divCounts, setDivCounts] = useState({}); // key -> {count, capacity}
-  const [pending,  setPending]  = useState(null);
+  const [selDivs,   setSelDivs]   = useState([]);
+  const [divCounts, setDivCounts] = useState({});
+  const [sel3v3Divs, setSel3v3Divs] = useState([]); // for 3v3
+  const [pending,   setPending]   = useState(null);
   const [showBuilder, setShowBuilder] = useState(false);
 
   const upd = (k,v) => setForm(f=>({...f,[k]:v}));
   const isDivSel = (g,s) => !!selDivs.find(d=>d.gradeId===g&&d.gender===s);
+  const is3v3DivSel = (id) => sel3v3Divs.includes(id);
 
   const toggleDiv = (gradeId,gender) => {
     const key=`${gradeId}-${gender}`;
@@ -730,38 +868,66 @@ function CreateModal({onSave, onClose}) {
       setDivCounts(dc=>{const n={...dc};delete n[key];return n;});
     } else {
       setSelDivs(p=>[...p,{gradeId,gender}]);
-      setDivCounts(dc=>({...dc,[key]:{count:4,capacity:4}}));
+      setDivCounts(dc=>({...dc,[key]:{count:8,capacity:8}}));
+    }
+  };
+
+  const toggle3v3Div = (id) => {
+    const key=id;
+    if (is3v3DivSel(id)) {
+      setSel3v3Divs(p=>p.filter(x=>x!==id));
+      setDivCounts(dc=>{const n={...dc};delete n[key];return n;});
+    } else {
+      setSel3v3Divs(p=>[...p,id]);
+      setDivCounts(dc=>({...dc,[key]:{count:8,capacity:8}}));
     }
   };
 
   const updDivCount=(key,field,val)=>setDivCounts(dc=>({...dc,[key]:{...dc[key],[field]:parseInt(val)}}));
 
-  const makeDivisions = () => {
+  const makeDivisions5v5 = () => {
     let tid=Date.now();
     return selDivs.map((sd,i)=>{
       const key=`${sd.gradeId}-${sd.gender}`;
-      const {count=4,capacity=8}=divCounts[key]||{};
-      // Create placeholder teams with TBD names — real names added later
+      const {count=4,capacity=4}=divCounts[key]||{};
       const teams=Array.from({length:count},(_,ti)=>({
-        id:tid+i*100+ti,
-        name:`TBD ${ti+1}`,
-        pool:"A",wins:0,losses:0,pf:0,pa:0
+        id:tid+i*100+ti, name:`TBD ${ti+1}`, pool:"A", wins:0,losses:0,pf:0,pa:0
       }));
       return {id:`div-${tid}-${i}`,gradeId:sd.gradeId,gender:sd.gender,teams,capacity};
     });
   };
 
-  const totalDivs = selDivs.length;
+  const makeDivisions3v3 = () => {
+    let tid=Date.now();
+    return sel3v3Divs.map((divId,i)=>{
+      const divDef=THREEV3_DIVISIONS.find(d=>d.id===divId);
+      const {count=8,capacity=8}=divCounts[divId]||{};
+      // 2 pools of 4 — first half Pool A, second half Pool B
+      const teams=Array.from({length:count},(_,ti)=>({
+        id:tid+i*100+ti,
+        name:`TBD ${ti+1}`,
+        pool:ti<Math.ceil(count/2)?"A":"B",
+        wins:0,losses:0,pf:0,pa:0,
+        players:[] // roster slots
+      }));
+      return {id:`div-${tid}-${i}`,gradeId:divId,gender:"",
+        label:divDef?.label||divId,color:divDef?.color||C.sky,
+        type:"3v3",teams,capacity};
+    });
+  };
 
-  // Just create and save the tournament — schedule generated later from admin
+  const totalDivs = type==="3v3"?sel3v3Divs.length:selDivs.length;
+
   const handleCreate = () => {
-    const divs = makeDivisions();
+    const divs = type==="3v3" ? makeDivisions3v3() : makeDivisions5v5();
     const base = {
       id:Date.now(), name:form.name, startDate:form.startDate,
       regCloseDate:form.regCloseDate,
-      numDays:parseInt(form.numDays), startTime:form.startTime,
-      gameDuration:parseInt(form.gameDuration),
+      numDays:parseInt(form.numDays),
+      startTime:form.startTime,
+      gameDuration:type==="3v3"?GAME_DURATION_3V3:parseInt(form.gameDuration),
       location:form.location, status:"upcoming",
+      type, // "5v5" or "3v3"
       divisions:divs, games:[], registrations:[],
     };
     onSave(base);
@@ -772,37 +938,42 @@ function CreateModal({onSave, onClose}) {
       <ScheduleBuilder
         tournament={pending.tournament}
         initialGames={pending.games}
-        onSave={games=>onSave({...pending.tournament, games})}
+        onSave={games=>onSave({...pending.tournament,games})}
         onClose={()=>setShowBuilder(false)}
       />
     );
   }
 
-  const timeOpts = buildSlots("6:00 AM",18,30);
+  const timeOpts = buildSlots("6:00 AM",24,30);
 
   return (
     <div style={{position:"fixed",inset:0,background:"#000a",zIndex:1000,display:"flex",
       alignItems:"center",justifyContent:"center",padding:16,overflowY:"auto"}}>
       <div style={{background:C.navyMid,borderRadius:20,width:560,maxWidth:"100%",
-        border:`1px solid ${C.sky}44`,boxShadow:`0 24px 80px #000a`,
+        border:`1px solid ${type==="3v3"?C.sky+"88":C.sky+"44"}`,boxShadow:`0 24px 80px #000a`,
         maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
 
         {/* Header */}
         <div style={{padding:"22px 26px 14px",borderBottom:`1px solid ${C.grayL}`,flexShrink:0}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:step>0?14:0}}>
             <div>
-              <div style={{color:C.sky,fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase"}}>
-                New Tournament
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{color:C.sky,fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase"}}>
+                  New Tournament
+                </div>
+                {type&&<div style={{background:type==="3v3"?C.sky+"33":C.green+"33",
+                  color:type==="3v3"?C.sky:C.green,borderRadius:6,padding:"2px 8px",
+                  fontSize:11,fontWeight:800}}>{type}</div>}
               </div>
-              <div style={{color:C.white,fontWeight:900,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif"}}>
-                {step===1?"Details & Settings":step===2?"Select Divisions":"Register Teams"}
+              <div style={{color:C.white,fontWeight:900,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif",marginTop:2}}>
+                {step===0?"Choose Tournament Type":step===1?"Details & Settings":step===2?"Select Divisions":"Team Counts"}
               </div>
             </div>
             <button onClick={onClose} style={{background:"transparent",border:"none",color:C.gray,cursor:"pointer",fontSize:22}}>×</button>
           </div>
-          {/* Step indicators */}
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            {["Details","Divisions","Teams"].map((s,i)=>(
+          {/* Step indicators — only show after type is selected */}
+          {step>0&&<div style={{display:"flex",gap:6,alignItems:"center"}}>
+            {["Details","Divisions","Counts"].map((s,i)=>(
               <div key={s} style={{display:"flex",alignItems:"center",gap:6}}>
                 <div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",
                   justifyContent:"center",fontSize:11,fontWeight:800,
@@ -812,14 +983,40 @@ function CreateModal({onSave, onClose}) {
                 {i<2&&<div style={{width:20,height:1,background:C.grayL}}/>}
               </div>
             ))}
-          </div>
+          </div>}
         </div>
 
         <div style={{padding:26,overflowY:"auto",flex:1}}>
 
+          {/* ── STEP 0: Tournament Type ── */}
+          {step===0&&<>
+            <div style={{color:C.gray,fontSize:13,marginBottom:20,textAlign:"center"}}>
+              What type of tournament are you creating?
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:20}}>
+              {[
+                {id:"5v5",icon:"🏀",title:"5v5 Tournament",desc:"Standard basketball tournament with grade/gender divisions"},
+                {id:"3v3",icon:"🏃",title:"3v3 Tournament",desc:"3-on-3 with HS Boys, Men's 19-30, Men's 30+, Women's"},
+              ].map(opt=>(
+                <button key={opt.id} onClick={()=>{setType(opt.id);setStep(1);}}
+                  style={{background:C.navy,borderRadius:14,padding:24,cursor:"pointer",textAlign:"center",
+                    border:`2px solid ${C.grayL}`,transition:"all 0.15s",
+                    ':hover':{border:`2px solid ${C.sky}`}}}>
+                  <div style={{fontSize:36,marginBottom:10}}>{opt.icon}</div>
+                  <div style={{color:C.white,fontWeight:800,fontSize:16,
+                    fontFamily:"'Barlow Condensed',sans-serif",marginBottom:6}}>{opt.title}</div>
+                  <div style={{color:C.gray,fontSize:12,lineHeight:1.5}}>{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+            <button onClick={onClose}
+              style={{width:"100%",background:"transparent",border:"none",color:C.gray,
+                cursor:"pointer",fontSize:13,padding:"8px 0"}}>Cancel</button>
+          </>}
+
           {/* ── STEP 1: Details ── */}
           {step===1&&<>
-            <Inp label="Tournament Name" value={form.name} onChange={e=>upd("name",e.target.value)} placeholder="e.g. Spring Shootout 2026"/>
+            <Inp label="Tournament Name" value={form.name} onChange={e=>upd("name",e.target.value)} placeholder={type==="3v3"?"e.g. Summer 3v3 Classic":"e.g. Spring Shootout 2026"}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <Inp label="Start Date" type="date" value={form.startDate} onChange={e=>upd("startDate",e.target.value)}/>
               <Sel label="Number of Days" value={form.numDays} onChange={e=>upd("numDays",e.target.value)}>
@@ -862,7 +1059,8 @@ function CreateModal({onSave, onClose}) {
           </>}
 
           {/* ── STEP 2: Divisions ── */}
-          {step===2&&<>
+          {/* ── STEP 2: Divisions ── */}
+          {step===2&&type==="5v5"&&<>
             <div style={{color:C.gray,fontSize:13,marginBottom:18}}>
               Select all grade & gender divisions for this tournament.
             </div>
@@ -901,24 +1099,67 @@ function CreateModal({onSave, onClose}) {
             )}
             <div style={{display:"flex",gap:10,marginTop:8}}>
               <Btn v="gh" onClick={()=>setStep(1)} sx={{flex:1}}>← Back</Btn>
-              <Btn v="pri" onClick={()=>setStep(3)} dis={selDivs.length===0} sx={{flex:2}}>Next → Teams</Btn>
+              <Btn v="pri" onClick={()=>setStep(3)} dis={selDivs.length===0} sx={{flex:2}}>Next → Counts</Btn>
             </div>
           </>}
 
-          {/* ── STEP 3: Division Setup ── */}
+          {/* ── STEP 2: 3v3 Divisions ── */}
+          {step===2&&type==="3v3"&&<>
+            <div style={{color:C.gray,fontSize:13,marginBottom:18}}>
+              Select which 3v3 divisions this tournament will include.
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
+              {THREEV3_DIVISIONS.map(div=>{
+                const sel=is3v3DivSel(div.id);
+                return (
+                  <button key={div.id} onClick={()=>toggle3v3Div(div.id)}
+                    style={{padding:"16px 12px",borderRadius:12,cursor:"pointer",textAlign:"center",
+                      border:`2px solid ${sel?div.color:C.grayL}`,
+                      background:sel?div.color+"22":C.navy,
+                      color:sel?div.color:C.gray,
+                      fontWeight:700,fontSize:14,fontFamily:"'Barlow Condensed',sans-serif",
+                      transition:"all 0.15s"}}>
+                    {sel&&<div style={{color:C.green,fontSize:11,marginBottom:4}}>✓</div>}
+                    {div.label}
+                  </button>
+                );
+              })}
+            </div>
+            {sel3v3Divs.length>0&&(
+              <div style={{background:C.navy,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",marginBottom:8}}>
+                  {sel3v3Divs.length} Division{sel3v3Divs.length>1?"s":""} Selected
+                </div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {sel3v3Divs.map(id=>{
+                    const d=THREEV3_DIVISIONS.find(x=>x.id===id);
+                    return <Badge key={id} c={d?.color||C.sky}>{d?.label}</Badge>;
+                  })}
+                </div>
+              </div>
+            )}
+            <div style={{display:"flex",gap:10,marginTop:8}}>
+              <Btn v="gh" onClick={()=>setStep(1)} sx={{flex:1}}>← Back</Btn>
+              <Btn v="pri" onClick={()=>setStep(3)} dis={sel3v3Divs.length===0} sx={{flex:2}}>Next → Counts</Btn>
+            </div>
+          </>}
+
+          {/* ── STEP 3: Team Counts ── */}
           {step===3&&<>
             <div style={{color:C.gray,fontSize:13,marginBottom:6}}>
-              Set how many teams you expect per division and the max capacity for registration.
-              Team names will be added later as teams register or sign up.
+              Set team counts and registration capacity per division.
+              {type==="3v3"&&" Teams are split evenly into Pool A and Pool B."}
             </div>
             <div style={{background:C.navy,borderRadius:10,padding:"10px 14px",marginBottom:18,border:`1px solid ${C.sky}33`}}>
               <div style={{color:C.sky,fontSize:12,fontWeight:700}}>
-                💡 Team names are TBD placeholders — update them anytime in the Edit Tournament screen or when approving registrations.
+                💡 Team names are TBD — update them in Edit Tournament or when approving registrations.
               </div>
             </div>
-            {selDivs.map((sd,di)=>{
+
+            {/* 5v5 division counts */}
+            {type==="5v5"&&selDivs.map((sd,di)=>{
               const key=`${sd.gradeId}-${sd.gender}`;
-              const {count=4,capacity=8}=divCounts[key]||{};
+              const {count=4,capacity=4}=divCounts[key]||{};
               const col=dc(di);
               return (
                 <div key={key} style={{marginBottom:14,background:C.navy,borderRadius:14,padding:16,border:`1px solid ${col}44`}}>
@@ -926,37 +1167,64 @@ function CreateModal({onSave, onClose}) {
                     textTransform:"uppercase",marginBottom:14}}>{dlabel(sd.gradeId,sd.gender)}</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                     <div>
-                      <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",
-                        letterSpacing:"0.06em",marginBottom:8}}>Number of Teams</div>
+                      <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Number of Teams</div>
                       <select value={count} onChange={e=>updDivCount(key,"count",e.target.value)}
-                        style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,
-                          color:C.white,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
+                        style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
                         {[2,3,4,5,6,7,8,10,12,16].map(n=><option key={n} value={n}>{n} teams</option>)}
                       </select>
-                      <div style={{color:C.gray,fontSize:10,marginTop:5}}>How many teams will play in this division</div>
                     </div>
                     <div>
-                      <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",
-                        letterSpacing:"0.06em",marginBottom:8}}>Registration Capacity</div>
+                      <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Registration Capacity</div>
                       <select value={capacity} onChange={e=>updDivCount(key,"capacity",e.target.value)}
-                        style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,
-                          color:C.white,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
-                        {[4,5,6,7,8,10,12,16].map(n=><option key={n} value={n}>{n} teams max</option>)}
+                        style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
+                        {[4,5,6,7,8,10,12,16].map(n=><option key={n} value={n}>{n} max</option>)}
                       </select>
-                      <div style={{color:C.gray,fontSize:10,marginTop:5}}>Registration closes when this limit is hit</div>
                     </div>
                   </div>
-                  <div style={{marginTop:12,background:col+"11",borderRadius:8,padding:"10px 12px",
-                    color:col,fontSize:12,fontWeight:600}}>
-                    {count} matchup slot{count!==1?"s":""} will be generated · Registration opens for up to {capacity} teams
+                  <div style={{marginTop:10,background:col+"11",borderRadius:8,padding:"8px 12px",color:col,fontSize:12,fontWeight:600}}>
+                    {count} slots · up to {capacity} registrations
                   </div>
                 </div>
               );
             })}
+
+            {/* 3v3 division counts */}
+            {type==="3v3"&&sel3v3Divs.map((divId,di)=>{
+              const divDef=THREEV3_DIVISIONS.find(d=>d.id===divId);
+              const col=divDef?.color||dc(di);
+              const {count=8,capacity=8}=divCounts[divId]||{};
+              const halfA=Math.ceil(count/2), halfB=Math.floor(count/2);
+              return (
+                <div key={divId} style={{marginBottom:14,background:C.navy,borderRadius:14,padding:16,border:`1px solid ${col}44`}}>
+                  <div style={{color:col,fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",
+                    textTransform:"uppercase",marginBottom:14}}>{divDef?.label}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                    <div>
+                      <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Total Teams</div>
+                      <select value={count} onChange={e=>updDivCount(divId,"count",e.target.value)}
+                        style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
+                        {[4,6,8,10,12,16].map(n=><option key={n} value={n}>{n} teams</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Registration Cap</div>
+                      <select value={capacity} onChange={e=>updDivCount(divId,"capacity",e.target.value)}
+                        style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
+                        {[4,6,8,10,12,16].map(n=><option key={n} value={n}>{n} max</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{marginTop:10,background:col+"11",borderRadius:8,padding:"8px 12px",color:col,fontSize:12,fontWeight:600}}>
+                    Pool A: {halfA} teams · Pool B: {halfB} teams · {capacity} registration slots
+                  </div>
+                </div>
+              );
+            })}
+
             <div style={{display:"flex",gap:10,marginTop:8}}>
               <Btn v="gh" onClick={()=>setStep(2)} sx={{flex:1}}>← Back</Btn>
               <Btn v="org" onClick={handleCreate} dis={totalDivs===0} sx={{flex:2}}>
-                🏀 Create Tournament
+                🏀 Create {type} Tournament
               </Btn>
             </div>
           </>}
@@ -978,11 +1246,15 @@ function AdminSchedule({tournament, onScore, onUpdateGames}) {
   const [fDiv, setFDiv] = useState("all");
   const [fDay, setFDay] = useState("all");
   const dates = tDates(tournament);
+  const is3v3 = tournament.type === "3v3";
+  const courts = is3v3 ? COURTS_3V3 : COURTS_5V5;
 
   const noGames = tournament.games.length === 0;
 
   const handleGenerate = () => {
-    const games = genMatchups(tournament.divisions, gamesPerTeam);
+    const games = is3v3
+      ? gen3v3Matchups(tournament.divisions, gamesPerTeam)
+      : genMatchups(tournament.divisions, gamesPerTeam);
     onUpdateGames(games);
     setShowGenModal(false);
     setShowBuilder(true);
@@ -1106,30 +1378,40 @@ function AdminSchedule({tournament, onScore, onUpdateGames}) {
           <div style={{background:C.navyMid,borderRadius:18,padding:28,width:420,maxWidth:"100%",border:`1px solid ${C.sky}55`,boxShadow:`0 20px 60px #00000088`}}>
             <div style={{textAlign:"center",marginBottom:20}}>
               <div style={{fontSize:32,marginBottom:8}}>⚡</div>
-              <div style={{color:C.white,fontWeight:900,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:6}}>Generate Pool Play Matchups</div>
+              <div style={{color:C.white,fontWeight:900,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:6}}>
+                Generate {is3v3?"3v3":"Pool Play"} Matchups
+              </div>
               <div style={{color:C.gray,fontSize:13,lineHeight:1.6}}>
-                Choose how many pool play games each team plays. Bracket play is always single elimination.
+                {is3v3
+                  ? "Choose pool play games per team (3-6). 2 pools of 4. Top 8 advance to single elimination bracket."
+                  : "Choose how many pool play games each team plays. Bracket is always single elimination."}
               </div>
             </div>
 
             {/* Divisions summary */}
             <div style={{background:C.navy,borderRadius:10,padding:14,marginBottom:20}}>
-              <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Divisions & Teams</div>
+              <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>
+                {is3v3?"Divisions":"Divisions & Teams"}
+              </div>
               {tournament.divisions.map((d,i)=>(
                 <div key={d.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:i>0?`1px solid ${C.grayL}`:"none"}}>
-                  <span style={{color:dc(i),fontWeight:700,fontSize:13}}>{dlabel(d.gradeId,d.gender)}</span>
-                  <span style={{color:C.gray,fontSize:12}}>{d.teams.length} teams</span>
+                  <span style={{color:is3v3?(d.color||dc(i)):dc(i),fontWeight:700,fontSize:13}}>
+                    {is3v3?(d.label||d.gradeId):dlabel(d.gradeId,d.gender)}
+                  </span>
+                  <span style={{color:C.gray,fontSize:12}}>
+                    {d.teams.length} teams{is3v3?" · 2 pools of "+Math.ceil(d.teams.length/2):""}
+                  </span>
                 </div>
               ))}
             </div>
 
-            {/* Games per team selector */}
+            {/* Games per team */}
             <div style={{marginBottom:20}}>
               <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>
                 Pool Play Games Per Team
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                {[1,2,3,4,5,6].filter(n=>n<=maxGames).map(n=>(
+                {(is3v3?[3,4,5,6]:[1,2,3,4,5,6].filter(n=>n<=maxGames)).map(n=>(
                   <button key={n} onClick={()=>setGamesPerTeam(n)}
                     style={{flex:1,minWidth:50,padding:"12px 8px",borderRadius:10,cursor:"pointer",
                       border:`2px solid ${gamesPerTeam===n?C.sky:C.grayL}`,
@@ -1139,19 +1421,28 @@ function AdminSchedule({tournament, onScore, onUpdateGames}) {
                     {n}
                   </button>
                 ))}
-                {maxGames<1&&<div style={{color:C.gold,fontSize:13}}>Add teams first before generating matchups</div>}
+                {!is3v3&&maxGames<1&&<div style={{color:C.gold,fontSize:13}}>Add teams first</div>}
               </div>
               <div style={{color:C.gray,fontSize:12,marginTop:10,lineHeight:1.5}}>
-                {gamesPerTeam===maxGames
-                  ? "Full round robin — every team plays every other team once"
-                  : `Each team plays ${gamesPerTeam} game${gamesPerTeam>1?"s":""} in pool play`}
-                {" "}· Bracket is single elimination.
+                Each team plays <strong style={{color:C.white}}>{gamesPerTeam}</strong> pool play game{gamesPerTeam>1?"s":""}
+                {is3v3?" · QF: 1v8, 2v7, 3v6, 4v5 · Semis · Final":" · Single elimination bracket"}
               </div>
             </div>
 
+            {/* 3v3 info box */}
+            {is3v3&&(
+              <div style={{background:C.sky+"18",border:`1px solid ${C.sky}44`,borderRadius:10,
+                padding:"10px 14px",marginBottom:16}}>
+                <div style={{color:C.sky,fontSize:12,fontWeight:700,marginBottom:4}}>🏀 3v3 Format</div>
+                <div style={{color:C.gray,fontSize:12,lineHeight:1.6}}>
+                  8 courts · 15 min games · Pool A seeds 1,3,5,7 · Pool B seeds 2,4,6,8
+                </div>
+              </div>
+            )}
+
             <div style={{display:"flex",gap:10}}>
               <Btn v="gh" onClick={()=>setShowGenModal(false)} sx={{flex:1}}>Cancel</Btn>
-              <Btn v="org" onClick={handleGenerate} dis={maxGames<1} sx={{flex:2}}>
+              <Btn v="org" onClick={handleGenerate} dis={!is3v3&&maxGames<1} sx={{flex:2}}>
                 ⚡ Generate & Build Schedule
               </Btn>
             </div>
@@ -1283,10 +1574,15 @@ function AdminBracket({tournament}) {
   const [aDiv,setADiv]=useState(tournament.divisions[0]?.id);
   const div=tournament.divisions.find(d=>d.id===aDiv);
   const di=tournament.divisions.indexOf(div);
-  const col=dc(di);
+  const is3v3=tournament.type==="3v3";
+  const col=is3v3?(div?.color||dc(di)):dc(di);
   const bGames=tournament.games.filter(g=>g.divisionId===aDiv&&g.phase==="bracket");
-  const semis=bGames.filter(g=>g.round==="Semi");
+  const qfGames=bGames.filter(g=>["QF1","QF2","QF3","QF4"].includes(g.round));
+  const semis=bGames.filter(g=>["Semi","Semi1","Semi2"].includes(g.round));
   const final=bGames.find(g=>g.round==="Final");
+
+  const getDivLabel=(d,i)=>is3v3?(d.label||d.gradeId):dshort(d.gradeId,d.gender);
+
   const GBox=({game,hi})=>(
     <div style={{background:hi?`linear-gradient(135deg,${C.navy},${C.navyLight})`:C.navy,borderRadius:12,
       border:`1px solid ${hi?col:C.grayL}`,padding:"13px 16px",minWidth:210,boxShadow:hi?`0 0 18px ${col}33`:"none"}}>
@@ -1305,6 +1601,118 @@ function AdminBracket({tournament}) {
       })}
     </div>
   );
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:18}}>
+        {tournament.divisions.map((d,i)=>(
+          <button key={d.id} onClick={()=>setADiv(d.id)} style={{padding:"8px 14px",borderRadius:8,
+            border:`1px solid ${aDiv===d.id?(is3v3?(d.color||dc(i)):dc(i)):C.grayL}`,
+            background:aDiv===d.id?(is3v3?(d.color||dc(i)):dc(i))+"22":"transparent",
+            color:aDiv===d.id?(is3v3?(d.color||dc(i)):dc(i)):C.gray,
+            cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>
+            {getDivLabel(d,i)}
+          </button>
+        ))}
+      </div>
+      {div&&(()=>{
+        const divPoolGames=tournament.games.filter(g=>g.divisionId===div.id&&g.phase==="pool");
+        const poolTotal=divPoolGames.length;
+        const poolDone=divPoolGames.filter(g=>g.status==="final").length;
+        const allPoolDone=poolTotal>0&&poolDone===poolTotal;
+        const qfSeeded=is3v3?qfGames.every(g=>g.homeId&&g.awayId):false;
+        const semisSeeded=semis.every(s=>s.homeId&&s.awayId);
+        const finalSeeded=final?.homeId&&final?.awayId;
+        const semis1Done=semis.length>0&&semis.every(s=>s.status==="final");
+        const divLabel=is3v3?(div.label||div.gradeId):dlabel(div.gradeId,div.gender);
+        return <>
+        <Ttl sub={`${divLabel} — seeded from pool play`}>
+          {is3v3?"3v3 Bracket":"Championship Bracket"}
+        </Ttl>
+
+        {/* Seeding status */}
+        {!allPoolDone?(
+          <div style={{background:C.gold+"18",border:`1px solid ${C.gold}44`,borderRadius:10,
+            padding:"12px 16px",marginBottom:18,display:"flex",alignItems:"center",gap:12}}>
+            <span style={{fontSize:20}}>⏳</span>
+            <div>
+              <div style={{color:C.gold,fontWeight:800,fontSize:13}}>Waiting for pool play to finish</div>
+              <div style={{color:C.gray,fontSize:12,marginTop:2}}>
+                {poolDone} of {poolTotal} pool games scored
+              </div>
+            </div>
+          </div>
+        ):(is3v3?qfSeeded:semisSeeded)?(
+          <div style={{background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:10,
+            padding:"12px 16px",marginBottom:18,display:"flex",alignItems:"center",gap:12}}>
+            <span style={{fontSize:20}}>✅</span>
+            <div>
+              <div style={{color:C.green,fontWeight:800,fontSize:13}}>Bracket seeded automatically</div>
+              <div style={{color:C.gray,fontSize:12,marginTop:2}}>
+                {is3v3?"Quarterfinals ready to play":"Semis ready to play"}
+              </div>
+            </div>
+          </div>
+        ):null}
+
+        {/* 3v3 Bracket: QF → Semis → Final */}
+        {is3v3&&<>
+          {qfGames.length>0&&(
+            <div style={{marginBottom:20}}>
+              <div style={{color:C.gold,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                Quarterfinals
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10}}>
+                {qfGames.map(g=><GBox key={g.id} game={g} hi={false}/>)}
+              </div>
+            </div>
+          )}
+          {semis.length>0&&(
+            <div style={{marginBottom:20}}>
+              <div style={{color:C.sky,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                Semifinals
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10}}>
+                {semis.map(g=><GBox key={g.id} game={g} hi={false}/>)}
+              </div>
+            </div>
+          )}
+          {final&&(
+            <div>
+              <div style={{color:C.gold,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                🏆 Championship Final
+              </div>
+              <GBox game={final} hi={true}/>
+            </div>
+          )}
+        </>}
+
+        {/* 5v5 Bracket */}
+        {!is3v3&&<>
+          {semis.length>0&&(
+            <div style={{marginBottom:20}}>
+              <div style={{color:C.sky,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                Semifinals
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10}}>
+                {semis.map(g=><GBox key={g.id} game={g} hi={false}/>)}
+              </div>
+            </div>
+          )}
+          {final&&(
+            <div>
+              <div style={{color:C.gold,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                🏆 Championship Final
+              </div>
+              <GBox game={final} hi={true}/>
+            </div>
+          )}
+        </>}
+        </>;
+      })()}
+    </div>
+  );
+}
   return (
     <div>
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:18}}>
@@ -1316,85 +1724,6 @@ function AdminBracket({tournament}) {
           </button>
         ))}
       </div>
-      {div&&(()=>{
-        const divPoolGames   = tournament.games.filter(g=>g.divisionId===div.id&&g.phase==="pool");
-        const poolTotal      = divPoolGames.length;
-        const poolDone       = divPoolGames.filter(g=>g.status==="final").length;
-        const allPoolDone    = poolTotal>0 && poolDone===poolTotal;
-        const semisSeeded    = semis.every(s=>s.homeId&&s.awayId);
-        const finalSeeded    = final?.homeId&&final?.awayId;
-        const semis1Done     = semis.length>0 && semis.every(s=>s.status==="final");
-        return <>
-        <Ttl sub={`${dlabel(div.gradeId,div.gender)} — seeded from pool play`}>Championship Bracket</Ttl>
-
-        {/* Seeding status banner */}
-        {!allPoolDone ? (
-          <div style={{background:C.gold+"18",border:`1px solid ${C.gold}44`,borderRadius:10,
-            padding:"12px 16px",marginBottom:18,display:"flex",alignItems:"center",gap:12}}>
-            <span style={{fontSize:20}}>⏳</span>
-            <div>
-              <div style={{color:C.gold,fontWeight:800,fontSize:13}}>Waiting for pool play to finish</div>
-              <div style={{color:C.gray,fontSize:12,marginTop:2}}>
-                {poolDone} of {poolTotal} pool games scored — bracket seeds automatically once all are done
-              </div>
-            </div>
-          </div>
-        ) : semisSeeded ? (
-          <div style={{background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:10,
-            padding:"12px 16px",marginBottom:18,display:"flex",alignItems:"center",gap:12}}>
-            <span style={{fontSize:20}}>✅</span>
-            <div>
-              <div style={{color:C.green,fontWeight:800,fontSize:13}}>Bracket seeded automatically</div>
-              <div style={{color:C.gray,fontSize:12,marginTop:2}}>
-                {semis.length>0
-                  ? semis1Done
-                    ? finalSeeded ? "Final set — ready to play" : "Semis complete — final seeded"
-                    : "Semis ready to play"
-                  : finalSeeded ? "Final ready to play" : ""}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div style={{background:C.sky+"18",border:`1px solid ${C.sky}44`,borderRadius:10,
-            padding:"12px 16px",marginBottom:18,display:"flex",alignItems:"center",gap:12}}>
-            <span style={{fontSize:20}}>🌱</span>
-            <div>
-              <div style={{color:C.sky,fontWeight:800,fontSize:13}}>Pool play complete — seeding bracket…</div>
-              <div style={{color:C.gray,fontSize:12,marginTop:2}}>Teams will appear below once seeded</div>
-            </div>
-          </div>
-        )}
-
-        <div style={{overflowX:"auto",paddingBottom:16}}>
-          <div style={{display:"inline-flex",alignItems:"center",gap:0,minWidth:semis.length?560:260}}>
-            {semis.length>0&&<div style={{display:"flex",flexDirection:"column",gap:14}}>{semis.map(g=><GBox key={g.id} game={g}/>)}</div>}
-            {semis.length>0&&<div style={{display:"flex",flexDirection:"column",justifyContent:"center",height:semis.length>1?180:80,padding:"0 8px"}}>
-              {semis.length>1&&<>
-                <div style={{width:36,height:"50%",borderRight:`1px solid ${C.grayL}`,borderTop:`1px solid ${C.grayL}`,borderRadius:"0 8px 0 0"}}/>
-                <div style={{width:36,height:"50%",borderRight:`1px solid ${C.grayL}`,borderBottom:`1px solid ${C.grayL}`,borderRadius:"0 0 8px 0"}}/>
-              </>}
-            </div>}
-            {final&&<GBox game={final} hi/>}
-          </div>
-        </div>
-        {final?.status==="final"&&(
-          <div style={{marginTop:20,background:`linear-gradient(135deg,${col}22,${C.navyLight})`,
-            border:`1px solid ${C.gold}66`,borderRadius:16,padding:22,textAlign:"center"}}>
-            <div style={{fontSize:30}}>🏆</div>
-            <div style={{color:C.gold,fontWeight:900,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif"}}>
-              CHAMPIONS — {dlabel(div.gradeId,div.gender)}
-            </div>
-            <div style={{color:C.white,fontSize:18,fontWeight:700,marginTop:6}}>
-              {tname(tournament.divisions,final.homeScore>final.awayScore?final.homeId:final.awayId)}
-            </div>
-          </div>
-        )}
-        </>;
-      })()}
-    </div>
-  );
-}
-
 // ─── ADMIN COURTS GRID ────────────────────────────────────────────────────────
 function AdminCourts({tournament}) {
   const dates=tDates(tournament);
@@ -1731,6 +2060,131 @@ function AdminSettings({logoUrl, onSaveLogoUrl}) {
     </div>
   );
 }
+
+// ─── ADMIN TEAMS TAB ─────────────────────────────────────────────────────────
+function AdminTeams({tournament, onUpdateTournament}) {
+  const [activeDiv, setActiveDiv] = useState(tournament.divisions[0]?.id||null);
+  const [expandedTeam, setExpandedTeam] = useState(null);
+  const div = tournament.divisions.find(d=>d.id===activeDiv);
+  const is3v3 = tournament.type==="3v3";
+
+  const updTeamName=(divId,teamId,name)=>{
+    const updated={...tournament,divisions:tournament.divisions.map(d=>
+      d.id!==divId?d:{...d,teams:d.teams.map(t=>t.id!==teamId?t:{...t,name})}
+    )};
+    onUpdateTournament(updated);
+  };
+
+  const updRoster=(divId,teamId,players)=>{
+    const updated={...tournament,divisions:tournament.divisions.map(d=>
+      d.id!==divId?d:{...d,teams:d.teams.map(t=>t.id!==teamId?t:{...t,players})}
+    )};
+    onUpdateTournament(updated);
+  };
+
+  const getDivLabel=(d)=>is3v3?(d.label||d.gradeId):dlabel(d.gradeId,d.gender);
+  const getDivColor=(i)=>is3v3?(tournament.divisions[i]?.color||dc(i)):dc(i);
+
+  return (
+    <div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:20}}>
+        {tournament.divisions.map((d,i)=>(
+          <button key={d.id} onClick={()=>{setActiveDiv(d.id);setExpandedTeam(null);}} style={{
+            padding:"8px 16px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,
+            border:`1px solid ${activeDiv===d.id?getDivColor(i):C.grayL}`,
+            background:activeDiv===d.id?getDivColor(i)+"22":"transparent",
+            color:activeDiv===d.id?getDivColor(i):C.gray,
+            fontFamily:"'Barlow Condensed',sans-serif"}}>
+            {getDivLabel(d)}
+          </button>
+        ))}
+      </div>
+
+      {div&&<>
+        {/* Pool summary for 3v3 */}
+        {is3v3&&(
+          <div style={{display:"flex",gap:10,marginBottom:16}}>
+            {["A","B"].map(pool=>(
+              <div key={pool} style={{flex:1,background:C.navyMid,borderRadius:10,padding:"10px 14px",
+                border:`1px solid ${C.grayL}`,textAlign:"center"}}>
+                <div style={{color:C.gold,fontWeight:800,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>Pool {pool}</div>
+                <div style={{color:C.gray,fontSize:12}}>{div.teams.filter(t=>t.pool===pool).length} teams</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Teams by pool */}
+        {(is3v3?["A","B"]:[...new Set(div.teams.map(t=>t.pool))].sort()).map(pool=>(
+          <div key={pool} style={{marginBottom:20}}>
+            <div style={{color:C.gold,fontWeight:800,fontSize:12,textTransform:"uppercase",
+              letterSpacing:"0.08em",marginBottom:10,fontFamily:"'Barlow Condensed',sans-serif"}}>Pool {pool}</div>
+            {div.teams.filter(t=>t.pool===pool).map((team,ti)=>(
+              <div key={team.id} style={{marginBottom:8}}>
+                <div style={{background:C.navyMid,borderRadius:expandedTeam===team.id?"12px 12px 0 0":12,
+                  padding:"12px 16px",border:`1px solid ${C.grayL}`,
+                  display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:28,height:28,borderRadius:"50%",flexShrink:0,
+                    background:getDivColor(tournament.divisions.indexOf(div))+"33",
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    color:getDivColor(tournament.divisions.indexOf(div)),fontWeight:800,fontSize:12}}>
+                    {ti+1}
+                  </div>
+                  <input value={team.name} onChange={e=>updTeamName(div.id,team.id,e.target.value)}
+                    placeholder="Enter team name..."
+                    style={{flex:1,background:"transparent",border:"none",
+                      color:team.name&&!team.name.startsWith("TBD")?C.white:C.gray,
+                      fontSize:14,fontWeight:700,outline:"none",fontFamily:"inherit"}}/>
+                  {is3v3&&(
+                    <button onClick={()=>setExpandedTeam(expandedTeam===team.id?null:team.id)}
+                      style={{background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,
+                        color:C.gray,cursor:"pointer",padding:"5px 12px",fontSize:12,fontWeight:700}}>
+                      {expandedTeam===team.id?"▲ Roster":"▼ Roster"}
+                    </button>
+                  )}
+                </div>
+                {is3v3&&expandedTeam===team.id&&(
+                  <div style={{background:C.navy,borderRadius:"0 0 12px 12px",
+                    border:`1px solid ${C.grayL}`,borderTop:"none",padding:14}}>
+                    <div style={{color:C.sky,fontSize:11,fontWeight:700,textTransform:"uppercase",
+                      letterSpacing:"0.06em",marginBottom:10}}>Player Roster</div>
+                    {[0,1,2,3,4].map(pi=>{
+                      const players=team.players||[];
+                      const req=pi<3;
+                      return (
+                        <div key={pi} style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                          <div style={{width:22,height:22,borderRadius:"50%",flexShrink:0,
+                            background:req?C.sky+"33":C.grayL,
+                            display:"flex",alignItems:"center",justifyContent:"center",
+                            color:req?C.sky:C.gray,fontSize:10,fontWeight:800}}>{pi+1}</div>
+                          <input value={players[pi]||""}
+                            onChange={e=>{const p=[...(team.players||[])];p[pi]=e.target.value;updRoster(div.id,team.id,p);}}
+                            placeholder={req?`Player ${pi+1} (required)`:`Sub ${pi-1} (optional)`}
+                            style={{flex:1,background:C.navyMid,border:`1px solid ${req?C.grayL:C.grayD}`,
+                              borderRadius:8,color:C.white,fontSize:13,padding:"9px 12px",
+                              outline:"none",fontFamily:"inherit"}}/>
+                        </div>
+                      );
+                    })}
+                    <div style={{color:C.gray,fontSize:11,marginTop:4}}>Changes save automatically</div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+
+        <div style={{background:C.navyMid,borderRadius:10,padding:"12px 14px",border:`1px solid ${C.sky}33`}}>
+          <div style={{color:C.sky,fontSize:12,fontWeight:700,marginBottom:4}}>💡 Tip</div>
+          <div style={{color:C.gray,fontSize:12,lineHeight:1.6}}>
+            Click any team name field to edit it.{is3v3?" Click \"▼ Roster\" to expand and edit each team's player list.":""} Changes save to the database automatically.
+          </div>
+        </div>
+      </>}
+    </div>
+  );
+}
+
 function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTournament,logoUrl,onSaveLogoUrl,onGoHome}) {
   const [aTId,setATId]=useState(data.tournaments[0]?.id);
   const [tab,setTab]=useState("schedule");
@@ -1738,7 +2192,16 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
   const [showEdit,setShowEdit]=useState(false);
   const [showDeleteConfirm,setShowDeleteConfirm]=useState(false);
   const t=data.tournaments.find(x=>x.id===aTId)||data.tournaments[0];
-  const tabs=[{id:"schedule",icon:"📋",l:"Schedule"},{id:"standings",icon:"📊",l:"Standings"},{id:"bracket",icon:"🏆",l:"Bracket"},{id:"courts",icon:"🏟",l:"Courts"},{id:"registrations",icon:"📝",l:"Registrations"},{id:"settings",icon:"⚙️",l:"Settings"}];
+  const is3v3=t?.type==="3v3";
+  const tabs=[
+    {id:"schedule",icon:"📋",l:"Schedule"},
+    {id:"teams",icon:"🏀",l:"Teams"},
+    {id:"standings",icon:"📊",l:"Standings"},
+    {id:"bracket",icon:"🏆",l:"Bracket"},
+    {id:"courts",icon:"🏟",l:"Courts"},
+    {id:"registrations",icon:"📝",l:"Registrations"},
+    {id:"settings",icon:"⚙️",l:"Settings"},
+  ];
   return (
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:`linear-gradient(160deg,${C.navy},${C.navyMid})`}}>
       {/* Top Nav */}
@@ -1824,6 +2287,8 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
           ? <AdminSettings logoUrl={logoUrl} onSaveLogoUrl={onSaveLogoUrl}/>
           : tab==="registrations"&&t
           ? <AdminRegistrations tournament={t} onUpdateTournament={onEditTournament}/>
+          : tab==="teams"&&t
+          ? <AdminTeams tournament={t} onUpdateTournament={onEditTournament}/>
           : t?<>
           {tab==="schedule"&&<AdminSchedule tournament={t} onScore={onScore} onUpdateGames={g=>onUpdateGames(t.id,g)}/>}
           {tab==="standings"&&<AdminStandings tournament={t}/>}
@@ -3353,6 +3818,7 @@ export default function App() {
     const next = {
       ...d,
       tournaments: d.tournaments.map(t=>{
+        if(!t.games.find(g=>g.id===gId)) return t; // skip tournaments that don't have this game
         const gamesAfterScore=t.games.map(g=>g.id===gId?{...g,homeScore:h,awayScore:a,status:"final"}:g);
         const divisions=t.divisions.map(div=>{
           const teams=div.teams.map(tm=>({...tm,wins:0,losses:0,pf:0,pa:0}));
@@ -3364,8 +3830,12 @@ export default function App() {
           });
           return {...div,teams};
         });
-        const updated = {...t,divisions,games:seedBracket(divisions,gamesAfterScore)};
-        updateTournamentInDB(updated); // save to DB
+        // Use correct bracket seeder based on tournament type
+        const seededGames = t.type==="3v3"
+          ? seed3v3Bracket(divisions, gamesAfterScore)
+          : seedBracket(divisions, gamesAfterScore);
+        const updated = {...t,divisions,games:seededGames};
+        updateTournamentInDB(updated);
         return updated;
       })
     };
