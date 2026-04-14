@@ -348,7 +348,26 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
     setDrag(null); setOver(null);
   };
 
-  const unplace = id => setGames(prev=>prev.map(g=>g.id===id?{...g,dayIdx:null,court:null,time:null}:g));
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [expandedDivs, setExpandedDivs] = useState(()=>{
+    const init={};
+    tournament.divisions.forEach(d=>{ init[d.id]=true; });
+    return init;
+  });
+  const toggleDiv=(id)=>setExpandedDivs(prev=>({...prev,[id]:!prev[id]}));
+
+  const resetSchedule = () => {
+    setGames(prev => prev.map(g => ({...g, dayIdx:null, court:null, time:null})));
+    setShowResetConfirm(false);
+  };
+
+  // Drop onto sidebar = unplace the game
+  const dropOnSidebar = (e) => {
+    e.preventDefault();
+    if (!drag) return;
+    unplace(drag);
+    setDrag(null); setOver(null);
+  };
 
   const dayGames = games.filter(g=>g.dayIdx===dayIdx&&(fDiv==="all"||g.divisionId===fDiv));
   const visibleSlots = slots.filter(s => dayGames.some(g=>g.time===s) || (drag&&over?.dayIdx===dayIdx&&over?.time===s) || drag);
@@ -419,6 +438,7 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
             </div>
           )}
           <Btn v="ok" onClick={()=>onSave(games)} sx={{padding:"8px 18px",fontSize:12}}>✓ Save Schedule</Btn>
+          <Btn v="danger" onClick={()=>setShowResetConfirm(true)} sx={{padding:"8px 14px",fontSize:12}}>🔄 Reset</Btn>
           <Btn v="gh" onClick={onClose} sx={{padding:"8px 14px",fontSize:12}}>✕ Cancel</Btn>
         </div>
       </div>
@@ -452,7 +472,7 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
       <div style={{background:C.navy,borderBottom:`1px solid ${C.grayL}11`,
         padding:"8px 20px",display:"flex",gap:20,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>
         <span style={{color:C.gray,fontSize:12}}>
-          Drag games from the sidebar onto any court & time slot.
+          Drag games from sidebar → grid to schedule · Drag from grid → sidebar to unschedule.
           {restGap>0&&<span style={{color:C.gold}}> Min rest: {restGap>=60?`${restGap/60}hr`:restGap+"min"} per team.</span>}
         </span>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto"}}>
@@ -463,37 +483,84 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
       {/* Main: sidebar + grid */}
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
 
-        {/* ── Unscheduled sidebar ── */}
-        <div style={{width:230,background:C.navy,borderRight:`1px solid ${C.grayL}`,
-          overflowY:"auto",padding:12,flexShrink:0}}>
-          <div style={{color:C.gold,fontSize:11,fontWeight:800,textTransform:"uppercase",
-            letterSpacing:"0.08em",marginBottom:4}}>Unscheduled</div>
-          <div style={{color:C.gray,fontSize:11,marginBottom:12}}>
-            {unplaced.length} game{unplaced.length!==1?"s":""} remaining
+        {/* ── Unscheduled sidebar — also a drop target to unschedule ── */}
+        <div
+          onDragOver={e=>{ e.preventDefault(); }}
+          onDrop={dropOnSidebar}
+          style={{width:240,background:drag?C.navy+"ee":C.navy,
+            borderRight:`1px solid ${C.grayL}`,
+            overflowY:"auto",padding:"12px 10px",flexShrink:0,
+            border:drag?`2px dashed ${C.sky}66`:"2px solid transparent",
+            transition:"border 0.15s",boxSizing:"border-box"}}>
+
+          {/* Header */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div style={{color:C.gold,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em"}}>
+              Unscheduled
+            </div>
+            <div style={{color:C.gray,fontSize:11}}>{unplaced.length} left</div>
           </div>
 
-          {/* Group by division */}
+          {/* Drop hint when dragging a placed game */}
+          {drag&&games.find(g=>g.id===drag)?.court&&(
+            <div style={{background:C.sky+"18",border:`1px dashed ${C.sky}`,borderRadius:10,
+              padding:"10px 12px",marginBottom:10,textAlign:"center",color:C.sky,fontSize:12,fontWeight:700}}>
+              ↩ Drop here to unschedule
+            </div>
+          )}
+
+          {/* Division dropdowns */}
           {tournament.divisions.map((div,di)=>{
+            const col = dc(di);
+            const divAllGames = games.filter(g=>g.divisionId===div.id);
             const divUnplaced = unplaced.filter(g=>g.divisionId===div.id);
-            if (!divUnplaced.length) return null;
+            const divPlaced   = divAllGames.length - divUnplaced.length;
+            const isOpen      = expandedDivs[div.id];
             return (
-              <div key={div.id} style={{marginBottom:16}}>
-                <div style={{color:dc(di),fontSize:10,fontWeight:800,textTransform:"uppercase",
-                  letterSpacing:"0.08em",marginBottom:8,display:"flex",justifyContent:"space-between"}}>
-                  {dshort(div.gradeId,div.gender)}
-                  <span style={{color:C.gray,fontWeight:400}}>{divUnplaced.length}</span>
-                </div>
-                {divUnplaced.map(g=>(
-                  <div key={g.id} style={{marginBottom:7}}>{gameCard(g,false)}</div>
-                ))}
+              <div key={div.id} style={{marginBottom:8,borderRadius:10,overflow:"hidden",border:`1px solid ${col}44`}}>
+                {/* Division header — click to expand/collapse */}
+                <button onClick={()=>toggleDiv(div.id)}
+                  style={{width:"100%",background:col+"22",border:"none",cursor:"pointer",
+                    padding:"10px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{color:col,fontWeight:900,fontSize:11}}>{isOpen?"▾":"▸"}</span>
+                    <span style={{color:col,fontWeight:800,fontSize:12,
+                      fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                      {dshort(div.gradeId,div.gender)}
+                    </span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    {divUnplaced.length>0
+                      ? <span style={{background:col+"33",color:col,borderRadius:50,
+                          padding:"1px 8px",fontSize:10,fontWeight:800}}>{divUnplaced.length}</span>
+                      : <span style={{color:C.green,fontSize:11,fontWeight:700}}>✓</span>}
+                    <span style={{color:C.gray,fontSize:10}}>{divPlaced}/{divAllGames.length}</span>
+                  </div>
+                </button>
+
+                {/* Games list — shown when expanded */}
+                {isOpen&&(
+                  <div style={{background:C.navy,padding:"8px"}}>
+                    {divUnplaced.length===0?(
+                      <div style={{color:C.green,fontSize:11,fontWeight:700,textAlign:"center",padding:"8px 0"}}>
+                        ✓ All placed
+                      </div>
+                    ):(
+                      divUnplaced.map(g=>(
+                        <div key={g.id} style={{marginBottom:6}}>{gameCard(g,false)}</div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
 
-          {unplaced.length===0&&(
-            <div style={{textAlign:"center",padding:"30px 0"}}>
-              <div style={{fontSize:28,marginBottom:8}}>🎉</div>
+          {unplaced.length===0&&!drag&&(
+            <div style={{textAlign:"center",padding:"24px 0"}}>
+              <div style={{fontSize:26,marginBottom:6}}>🎉</div>
               <div style={{color:C.green,fontSize:13,fontWeight:700}}>All games scheduled!</div>
+              <div style={{color:C.gray,fontSize:10,marginTop:4}}>Drag any game here to unschedule</div>
             </div>
           )}
         </div>
@@ -584,6 +651,26 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
           </table>
         </div>
       </div>
+
+      {/* Reset confirmation modal */}
+      {showResetConfirm&&(
+        <div style={{position:"fixed",inset:0,background:"#000a",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:C.navyMid,borderRadius:18,padding:32,width:360,maxWidth:"100%",
+            border:`1px solid ${C.red}55`,textAlign:"center",boxShadow:`0 20px 60px #00000088`}}>
+            <div style={{fontSize:36,marginBottom:12}}>🔄</div>
+            <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
+              Reset Schedule?
+            </div>
+            <div style={{color:C.gray,fontSize:14,marginBottom:24,lineHeight:1.5}}>
+              All games will be moved back to the unscheduled sidebar. Your matchups are kept — you just start placing them from scratch.
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <Btn v="gh" onClick={()=>setShowResetConfirm(false)} sx={{flex:1}}>Cancel</Btn>
+              <Btn v="danger" onClick={resetSchedule} sx={{flex:1}}>Yes, Reset</Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
