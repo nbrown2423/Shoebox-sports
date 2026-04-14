@@ -218,7 +218,7 @@ function buildSeed() {
   )];
   return { tournaments:[{
     id:1, name:"Spring Shootout 2026", startDate:"2026-04-19", numDays:2,
-    startTime:"8:00 AM", gameDuration:60, restGap:60,
+    startTime:"8:00 AM", gameDuration:60,
     location:"Shoebox Sports - Detroit", status:"active",
     divisions:divs, games:withBracket,
   }]};
@@ -301,26 +301,14 @@ function Logo({sz=40,txt=true}) {
 function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
   const dates   = tDates(tournament);
   const slots   = buildSlots(tournament.startTime, 16, tournament.gameDuration);
-  const restGap = tournament.restGap || 0;
 
   const [games,   setGames]   = useState(initialGames.map(g=>({...g})));
   const [dayIdx,  setDayIdx]  = useState(0);
-  const [drag,    setDrag]    = useState(null); // game id being dragged
-  const [over,    setOver]    = useState(null); // {dayIdx,court,time}
+  const [drag,    setDrag]    = useState(null);
+  const [over,    setOver]    = useState(null);
   const [fDiv,    setFDiv]    = useState("all");
 
-  // Rest-gap violation detection
-  const viols = new Set();
-  if (restGap > 0) {
-    games.forEach(g => {
-      if (!g.homeId||!g.awayId||g.dayIdx===null) return;
-      [g.homeId,g.awayId].forEach(tid => {
-        games.filter(x=>x.id!==g.id&&x.dayIdx===g.dayIdx&&(x.homeId===tid||x.awayId===tid)&&x.time).forEach(o=>{
-          if (Math.abs(toMins(g.time)-toMins(o.time)) < restGap) { viols.add(g.id); viols.add(o.id); }
-        });
-      });
-    });
-  }
+  const viols = new Set(); // rest gap removed — manual scheduling
 
   const placed   = games.filter(g=>g.dayIdx!==null&&g.court&&g.time);
   const unplaced = games.filter(g=>g.dayIdx===null||!g.court||!g.time);
@@ -473,7 +461,6 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
         padding:"8px 20px",display:"flex",gap:20,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>
         <span style={{color:C.gray,fontSize:12}}>
           Drag games from sidebar → grid to schedule · Drag from grid → sidebar to unschedule.
-          {restGap>0&&<span style={{color:C.gold}}> Min rest: {restGap>=60?`${restGap/60}hr`:restGap+"min"} per team.</span>}
         </span>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginLeft:"auto"}}>
           {tournament.divisions.map((d,i)=><Badge key={d.id} c={dc(i)}>{dshort(d.gradeId,d.gender)}</Badge>)}
@@ -680,11 +667,11 @@ function CreateModal({onSave, onClose}) {
   const [step,    setStep]    = useState(1);
   const [form,    setForm]    = useState({
     name:"", startDate:"", numDays:"2",
-    startTime:"8:00 AM", gameDuration:"60", restGap:"60",
+    startTime:"8:00 AM", gameDuration:"60",
     location:"Shoebox Sports - Fenton, MI",
   });
   const [selDivs,  setSelDivs]  = useState([]);
-  const [divTeams, setDivTeams] = useState({});
+  const [divCounts, setDivCounts] = useState({}); // key -> {count, capacity}
   const [pending,  setPending]  = useState(null);
   const [showBuilder, setShowBuilder] = useState(false);
 
@@ -695,36 +682,31 @@ function CreateModal({onSave, onClose}) {
     const key=`${gradeId}-${gender}`;
     if (isDivSel(gradeId,gender)) {
       setSelDivs(p=>p.filter(d=>!(d.gradeId===gradeId&&d.gender===gender)));
-      setDivTeams(dt=>{const n={...dt};delete n[key];return n;});
+      setDivCounts(dc=>{const n={...dc};delete n[key];return n;});
     } else {
       setSelDivs(p=>[...p,{gradeId,gender}]);
-      setDivTeams(dt=>({...dt,[key]:[
-        {id:Date.now()+Math.random(),   name:"",pool:"A"},
-        {id:Date.now()+Math.random()+1, name:"",pool:"A"},
-        {id:Date.now()+Math.random()+2, name:"",pool:"A"},
-        {id:Date.now()+Math.random()+3, name:"",pool:"A"},
-      ]}));
+      setDivCounts(dc=>({...dc,[key]:{count:4,capacity:8}}));
     }
   };
 
-  const addTeam = key => {
-    const cur=divTeams[key]||[];
-    setDivTeams(dt=>({...dt,[key]:[...cur,{id:Date.now()+Math.random(),name:"",pool:"A"}]}));
-  };
-  const remTeam = (key,id) => setDivTeams(dt=>({...dt,[key]:dt[key].filter(t=>t.id!==id)}));
-  const updTeam = (key,id,f,v) => setDivTeams(dt=>({...dt,[key]:dt[key].map(t=>t.id===id?{...t,[f]:v}:t)}));
-
-  const totalTeams = selDivs.reduce((s,sd)=>s+(divTeams[`${sd.gradeId}-${sd.gender}`]||[]).filter(t=>t.name.trim()).length,0);
+  const updDivCount=(key,field,val)=>setDivCounts(dc=>({...dc,[key]:{...dc[key],[field]:parseInt(val)}}));
 
   const makeDivisions = () => {
     let tid=Date.now();
     return selDivs.map((sd,i)=>{
       const key=`${sd.gradeId}-${sd.gender}`;
-      return {id:`div-${tid}-${i}`,gradeId:sd.gradeId,gender:sd.gender,
-        teams:(divTeams[key]||[]).filter(t=>t.name.trim())
-          .map((t,ti)=>({...t,id:tid+i*100+ti,wins:0,losses:0,pf:0,pa:0}))};
-    }).filter(d=>d.teams.length>=2);
+      const {count=4,capacity=8}=divCounts[key]||{};
+      // Create placeholder teams with TBD names — real names added later
+      const teams=Array.from({length:count},(_,ti)=>({
+        id:tid+i*100+ti,
+        name:`TBD ${ti+1}`,
+        pool:"A",wins:0,losses:0,pf:0,pa:0
+      }));
+      return {id:`div-${tid}-${i}`,gradeId:sd.gradeId,gender:sd.gender,teams,capacity};
+    });
   };
+
+  const totalDivs = selDivs.length;
 
   // Step 3: generate matchups then open builder
   const handleOpenBuilder = () => {
@@ -733,9 +715,9 @@ function CreateModal({onSave, onClose}) {
     const base = {
       id:Date.now(), name:form.name, startDate:form.startDate,
       numDays:parseInt(form.numDays), startTime:form.startTime,
-      gameDuration:parseInt(form.gameDuration), restGap:parseInt(form.restGap),
+      gameDuration:parseInt(form.gameDuration),
       location:form.location, status:"upcoming",
-      divisions:divs, games:[],
+      divisions:divs, games:[], registrations:[],
     };
     setPending({tournament:base, games});
     setShowBuilder(true);
@@ -815,20 +797,10 @@ function CreateModal({onSave, onClose}) {
                   <option value="90">90 minutes (1.5 hr)</option>
                 </Sel>
               </div>
-              <Sel label="Minimum Rest Between Games (per team)" value={form.restGap} onChange={e=>upd("restGap",e.target.value)}>
-                <option value="0">No minimum rest</option>
-                <option value="60">1 hour minimum rest</option>
-                <option value="120">2 hour minimum rest</option>
-                <option value="180">3 hour minimum rest</option>
-              </Sel>
               <div style={{background:C.navyMid,borderRadius:10,padding:"12px 14px",border:`1px solid ${C.sky}33`}}>
-                <div style={{color:C.sky,fontSize:12,fontWeight:700,marginBottom:4}}>
-                  ✏️ How scheduling works
-                </div>
+                <div style={{color:C.sky,fontSize:12,fontWeight:700,marginBottom:4}}>✏️ How scheduling works</div>
                 <div style={{color:C.gray,fontSize:12,lineHeight:1.6}}>
-                  After entering your teams, all pool play matchups are automatically generated.
-                  You then drag each game onto any court and time slot you choose.
-                  Bracket games are added once pool play is complete.
+                  Pool play matchups are automatically generated. You then drag each game onto any court and time slot you choose. Bracket games are added once pool play is complete.
                 </div>
               </div>
             </div>
@@ -883,54 +855,57 @@ function CreateModal({onSave, onClose}) {
             </div>
           </>}
 
-          {/* ── STEP 3: Teams ── */}
+          {/* ── STEP 3: Division Setup ── */}
           {step===3&&<>
-            <div style={{color:C.gray,fontSize:13,marginBottom:18}}>
-              Add teams to each division. Pool play matchups will be generated automatically — then you place each game on the schedule.
+            <div style={{color:C.gray,fontSize:13,marginBottom:6}}>
+              Set how many teams you expect per division and the max capacity for registration.
+              Team names will be added later as teams register or sign up.
+            </div>
+            <div style={{background:C.navy,borderRadius:10,padding:"10px 14px",marginBottom:18,border:`1px solid ${C.sky}33`}}>
+              <div style={{color:C.sky,fontSize:12,fontWeight:700}}>
+                💡 Team names are TBD placeholders — update them anytime in the Edit Tournament screen or when approving registrations.
+              </div>
             </div>
             {selDivs.map((sd,di)=>{
               const key=`${sd.gradeId}-${sd.gender}`;
-              const teams=divTeams[key]||[];
+              const {count=4,capacity=8}=divCounts[key]||{};
               const col=dc(di);
-              const pools=[...new Set(teams.map(t=>t.pool))].sort();
               return (
-                <div key={key} style={{marginBottom:20,background:C.navy,borderRadius:14,padding:16,border:`1px solid ${col}44`}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                    <div style={{color:col,fontWeight:800,fontSize:14,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{dlabel(sd.gradeId,sd.gender)}</div>
-                    <Badge c={col}>{teams.filter(t=>t.name.trim()).length} teams</Badge>
-                  </div>
-                  {pools.map(pool=>(
-                    <div key={pool} style={{marginBottom:10}}>
-                      <div style={{color:C.gray,fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:7}}>Pool {pool}</div>
-                      {teams.filter(t=>t.pool===pool).map(team=>(
-                        <div key={team.id} style={{display:"flex",gap:8,alignItems:"center",marginBottom:6}}>
-                          <input value={team.name} onChange={e=>updTeam(key,team.id,"name",e.target.value)}
-                            placeholder="Team name..."
-                            style={{flex:1,background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,
-                              color:C.white,fontSize:14,padding:"9px 12px",outline:"none",fontFamily:"inherit"}}/>
-                          <select value={team.pool} onChange={e=>updTeam(key,team.id,"pool",e.target.value)}
-                            style={{background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,
-                              color:C.white,fontSize:13,padding:"9px 10px",outline:"none",cursor:"pointer"}}>
-                            {["A","B","C","D"].map(p=><option key={p}>{p}</option>)}
-                          </select>
-                          <button onClick={()=>remTeam(key,team.id)}
-                            style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
-                              borderRadius:8,padding:"9px 12px",cursor:"pointer",fontSize:13,fontWeight:700}}>✕</button>
-                        </div>
-                      ))}
+                <div key={key} style={{marginBottom:14,background:C.navy,borderRadius:14,padding:16,border:`1px solid ${col}44`}}>
+                  <div style={{color:col,fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",
+                    textTransform:"uppercase",marginBottom:14}}>{dlabel(sd.gradeId,sd.gender)}</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                    <div>
+                      <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",
+                        letterSpacing:"0.06em",marginBottom:8}}>Number of Teams</div>
+                      <select value={count} onChange={e=>updDivCount(key,"count",e.target.value)}
+                        style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,
+                          color:C.white,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
+                        {[2,3,4,5,6,7,8,10,12,16].map(n=><option key={n} value={n}>{n} teams</option>)}
+                      </select>
+                      <div style={{color:C.gray,fontSize:10,marginTop:5}}>How many teams will play in this division</div>
                     </div>
-                  ))}
-                  <button onClick={()=>addTeam(key)}
-                    style={{width:"100%",padding:"8px 0",background:"transparent",
-                      border:`1px dashed ${col}66`,borderRadius:8,color:col,cursor:"pointer",fontWeight:700,fontSize:12}}>
-                    + Add Team
-                  </button>
+                    <div>
+                      <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",
+                        letterSpacing:"0.06em",marginBottom:8}}>Registration Capacity</div>
+                      <select value={capacity} onChange={e=>updDivCount(key,"capacity",e.target.value)}
+                        style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,
+                          color:C.white,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
+                        {[4,5,6,7,8,10,12,16].map(n=><option key={n} value={n}>{n} teams max</option>)}
+                      </select>
+                      <div style={{color:C.gray,fontSize:10,marginTop:5}}>Registration closes when this limit is hit</div>
+                    </div>
+                  </div>
+                  <div style={{marginTop:12,background:col+"11",borderRadius:8,padding:"10px 12px",
+                    color:col,fontSize:12,fontWeight:600}}>
+                    {count} matchup slot{count!==1?"s":""} will be generated · Registration opens for up to {capacity} teams
+                  </div>
                 </div>
               );
             })}
             <div style={{display:"flex",gap:10,marginTop:8}}>
               <Btn v="gh" onClick={()=>setStep(2)} sx={{flex:1}}>← Back</Btn>
-              <Btn v="org" onClick={handleOpenBuilder} dis={totalTeams<2} sx={{flex:2}}>
+              <Btn v="org" onClick={handleOpenBuilder} dis={totalDivs===0} sx={{flex:2}}>
                 ✏️ Generate Matchups & Build Schedule
               </Btn>
             </div>
@@ -1347,7 +1322,7 @@ function EditTournamentModal({tournament, onSave, onClose}) {
   const [form,setForm]=useState({
     name:tournament.name, startDate:tournament.startDate,
     numDays:String(tournament.numDays), startTime:tournament.startTime,
-    gameDuration:String(tournament.gameDuration), restGap:String(tournament.restGap),
+    gameDuration:String(tournament.gameDuration),
     location:tournament.location, status:tournament.status,
   });
   const [divisions,setDivisions]=useState(tournament.divisions.map(d=>({...d,teams:d.teams.map(t=>({...t}))})));
@@ -1374,7 +1349,7 @@ function EditTournamentModal({tournament, onSave, onClose}) {
     const existingGameDivIds=new Set(tournament.games.map(g=>g.divisionId));
     const newDivs=divisions.filter(d=>!existingGameDivIds.has(d.id)&&d.teams.filter(t=>t.name.trim()).length>=2);
     const newGames=genMatchups(newDivs);
-    onSave({...tournament,...form,numDays:parseInt(form.numDays),gameDuration:parseInt(form.gameDuration),restGap:parseInt(form.restGap),divisions,games:[...tournament.games,...newGames]});
+    onSave({...tournament,...form,numDays:parseInt(form.numDays),gameDuration:parseInt(form.gameDuration),divisions,games:[...tournament.games,...newGames]});
   };
   const timeOpts=buildSlots("6:00 AM",18,30);
   const div=divisions.find(d=>d.id===activeDiv);
@@ -1417,10 +1392,6 @@ function EditTournamentModal({tournament, onSave, onClose}) {
                 <option value="75">75 minutes</option><option value="90">90 minutes</option>
               </Sel>
             </div>
-            <Sel label="Min Rest Between Games" value={form.restGap} onChange={e=>upd("restGap",e.target.value)}>
-              <option value="0">No minimum rest</option><option value="60">1 hour minimum</option>
-              <option value="120">2 hour minimum</option><option value="180">3 hour minimum</option>
-            </Sel>
             <Sel label="Status" value={form.status} onChange={e=>upd("status",e.target.value)}>
               <option value="upcoming">Upcoming</option><option value="active">Active (Live)</option>
               <option value="complete">Complete</option>
@@ -2251,38 +2222,51 @@ async function deleteRegistration(id) {
 }
 
 // ─── PUBLIC REGISTRATION FORM ────────────────────────────────────────────────
-const PAYPAL = "Nbrown2423@gmail.com";
+const PAYPAL_USER = "Nbrown2423";
+const PAYPAL_LINK = `https://www.paypal.com/paypalme/${PAYPAL_USER}`;
 function RegistrationForm({data, onSubmit, onBack}) {
-  const [form,setForm]=useState({tournamentId:"",teamName:"",coachName:"",phone:"",email:"",gradeId:"",gender:"Boys",agreed:false});
+  const [form,setForm]=useState({
+    tournamentId:"", coachName:"", phone:"", email:"", agreed:false
+  });
+  // Multiple teams — each has its own name, grade, gender
+  const [teams,setTeams]=useState([
+    {id:1, teamName:"", gradeId:"", gender:"Boys"}
+  ]);
   const [submitted,setSubmitted]=useState(false);
+  const [submittedTeams,setSubmittedTeams]=useState([]);
   const [submitting,setSubmitting]=useState(false);
   const [errors,setErrors]=useState({});
+
   const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const updTeam=(id,k,v)=>setTeams(ts=>ts.map(t=>t.id===id?{...t,[k]:v}:t));
+  const addTeam=()=>setTeams(ts=>[...ts,{id:Date.now(),teamName:"",gradeId:"",gender:"Boys"}]);
+  const removeTeam=(id)=>{ if(teams.length>1) setTeams(ts=>ts.filter(t=>t.id!==id)); };
 
-  const selTournament = data.tournaments.find(t=>t.id===parseInt(form.tournamentId)||t.id===form.tournamentId);
+  const selTournament = data.tournaments.find(t=>
+    t.id===parseInt(form.tournamentId)||t.id===form.tournamentId
+  );
 
-  // Get available divisions for selected tournament (not at capacity)
-  const availableDivs = selTournament ? selTournament.divisions.filter(d=>{
-    const cap = d.capacity||8;
-    const regs = (selTournament.registrations||[]).filter(r=>r.gradeId===d.gradeId&&r.gender===d.gender&&r.status!=="rejected");
-    return regs.length < cap;
-  }) : [];
-
-  const fullDivs = selTournament ? selTournament.divisions.filter(d=>{
-    const cap = d.capacity||8;
-    const regs = (selTournament.registrations||[]).filter(r=>r.gradeId===d.gradeId&&r.gender===d.gender&&r.status!=="rejected");
-    return regs.length >= cap;
-  }) : [];
+  const isDivFull=(gradeId,gender)=>{
+    if(!selTournament) return false;
+    const div=selTournament.divisions.find(d=>d.gradeId===gradeId&&d.gender===gender);
+    if(!div) return false;
+    const cap=div.capacity||8;
+    const regs=(selTournament.registrations||[]).filter(r=>r.gradeId===gradeId&&r.gender===gender&&r.status!=="rejected");
+    return regs.length>=cap;
+  };
 
   const validate=()=>{
     const e={};
     if(!form.tournamentId) e.tournamentId="Please select a tournament";
-    if(!form.teamName.trim()) e.teamName="Team name is required";
     if(!form.coachName.trim()) e.coachName="Coach name is required";
     if(!form.phone.trim()) e.phone="Phone number is required";
     if(!form.email.trim()||!form.email.includes("@")) e.email="Valid email is required";
-    if(!form.gradeId) e.gradeId="Please select a grade division";
     if(!form.agreed) e.agreed="You must agree to the terms";
+    teams.forEach((t,i)=>{
+      if(!t.teamName.trim()) e[`teamName_${t.id}`]=`Team ${i+1} name is required`;
+      if(!t.gradeId) e[`gradeId_${t.id}`]=`Team ${i+1} needs a grade division`;
+      if(isDivFull(t.gradeId,t.gender)) e[`full_${t.id}`]=`${dlabel(t.gradeId,t.gender)} is full`;
+    });
     setErrors(e);
     return Object.keys(e).length===0;
   };
@@ -2290,53 +2274,77 @@ function RegistrationForm({data, onSubmit, onBack}) {
   const handleSubmit=async()=>{
     if(!validate()) return;
     setSubmitting(true);
-    const reg={
-      id:Date.now(),
+    const now=new Date().toISOString();
+    const regs=teams.map((t,i)=>({
+      id:Date.now()+i,
       tournamentId:selTournament.id,
       tournamentName:selTournament.name,
-      teamName:form.teamName.trim(),
+      teamName:t.teamName.trim(),
       coachName:form.coachName.trim(),
       phone:form.phone.trim(),
       email:form.email.trim(),
-      gradeId:form.gradeId,
-      gender:form.gender,
+      gradeId:t.gradeId,
+      gender:t.gender,
       status:"pending",
       paymentStatus:"unpaid",
-      submittedAt:new Date().toISOString(),
-    };
-    await onSubmit(reg);
+      submittedAt:now,
+    }));
+    for(const reg of regs) await onSubmit(reg);
+    setSubmittedTeams(regs);
     setSubmitting(false);
     setSubmitted(true);
   };
 
-  const FErr=({k})=>errors[k]?<div style={{color:C.red,fontSize:11,marginTop:4,fontWeight:600}}>{errors[k]}</div>:null;
+  const FErr=({k})=>errors[k]
+    ?<div style={{color:C.red,fontSize:11,marginTop:4,fontWeight:600}}>{errors[k]}</div>
+    :null;
 
+  // ── Confirmation screen ──
   if(submitted) return (
     <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
-      <div style={{padding:24,textAlign:"center",paddingTop:60}}>
-        <div style={{fontSize:48,marginBottom:16}}>🎉</div>
-        <div style={{color:C.green,fontWeight:900,fontSize:26,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>Registration Submitted!</div>
-        <div style={{color:C.white,fontSize:16,fontWeight:600,marginBottom:6}}>{form.teamName}</div>
-        <div style={{color:C.gray,fontSize:14,marginBottom:28,lineHeight:1.6}}>
-          Your registration for <span style={{color:C.white}}>{selTournament?.name}</span> has been received.
+      <div style={{padding:"40px 24px 24px",textAlign:"center"}}>
+        <div style={{fontSize:48,marginBottom:12}}>🎉</div>
+        <div style={{color:C.green,fontWeight:900,fontSize:26,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
+          Registration Submitted!
+        </div>
+        <div style={{color:C.gray,fontSize:14,marginBottom:20,lineHeight:1.6}}>
+          <strong style={{color:C.white}}>{submittedTeams.length} team{submittedTeams.length>1?"s":""}</strong> registered for <strong style={{color:C.white}}>{selTournament?.name}</strong>.<br/>
           You'll be contacted at <span style={{color:C.sky}}>{form.email}</span> once approved.
         </div>
 
-        {/* PayPal payment prompt */}
-        <div style={{background:C.navyMid,borderRadius:16,padding:24,marginBottom:24,border:`1px solid ${C.gold}44`}}>
+        {/* Teams summary */}
+        <div style={{background:C.navyMid,borderRadius:12,padding:16,marginBottom:20,textAlign:"left"}}>
+          <div style={{color:C.gold,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>
+            Registered Teams
+          </div>
+          {submittedTeams.map((t,i)=>(
+            <div key={t.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+              padding:"10px 0",borderTop:i>0?`1px solid ${C.grayL}`:"none"}}>
+              <div>
+                <div style={{color:C.white,fontWeight:700,fontSize:14}}>{t.teamName}</div>
+                <div style={{color:C.gray,fontSize:12}}>{dlabel(t.gradeId,t.gender)}</div>
+              </div>
+              <Badge c={C.gold}>Pending</Badge>
+            </div>
+          ))}
+        </div>
+
+        {/* PayPal payment */}
+        <div style={{background:C.navyMid,borderRadius:16,padding:24,marginBottom:20,border:`1px solid ${C.gold}44`}}>
           <div style={{color:C.gold,fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
             💰 Complete Your Payment
           </div>
           <div style={{color:C.gray,fontSize:13,marginBottom:16,lineHeight:1.6}}>
-            To secure your spot, please send your registration fee via PayPal. Include your <strong style={{color:C.white}}>team name</strong> and <strong style={{color:C.white}}>tournament name</strong> in the note.
+            Send your registration fee{submittedTeams.length>1?" for each team":""} via PayPal.
+            Include <strong style={{color:C.white}}>each team name</strong> and the <strong style={{color:C.white}}>tournament name</strong> in the note.
           </div>
-          <a href={`https://www.paypal.com/paypalme/${PAYPAL.split("@")[0]}`} target="_blank" rel="noopener noreferrer"
+          <a href={PAYPAL_LINK} target="_blank" rel="noopener noreferrer"
             style={{display:"inline-block",background:"#0070BA",color:"#fff",fontWeight:800,fontSize:15,
-              padding:"13px 28px",borderRadius:10,textDecoration:"none",fontFamily:"'Barlow Condensed',sans-serif",
-              letterSpacing:"0.06em",textTransform:"uppercase"}}>
+              padding:"13px 28px",borderRadius:10,textDecoration:"none",
+              fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.06em",textTransform:"uppercase"}}>
             Pay via PayPal →
           </a>
-          <div style={{color:C.gray,fontSize:11,marginTop:10}}>PayPal: {PAYPAL}</div>
+          <div style={{color:C.gray,fontSize:11,marginTop:10}}>paypal.me/{PAYPAL_USER}</div>
         </div>
 
         <Btn v="pri" onClick={onBack} sx={{padding:"11px 24px"}}>← Back to Tournaments</Btn>
@@ -2344,22 +2352,25 @@ function RegistrationForm({data, onSubmit, onBack}) {
     </div>
   );
 
+  // ── Registration Form ──
   return (
     <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
       <div style={{background:`linear-gradient(160deg,${C.navyLight},${C.navyMid})`,
         padding:"24px 20px",borderBottom:`1px solid ${C.grayL}`}}>
         <div style={{color:C.sky,fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:4}}>Shoebox Sports</div>
         <div style={{color:C.white,fontWeight:900,fontSize:26,fontFamily:"'Barlow Condensed',sans-serif"}}>Team Registration</div>
-        <div style={{color:C.gray,fontSize:13,marginTop:4}}>Register your team for an upcoming tournament</div>
+        <div style={{color:C.gray,fontSize:13,marginTop:4}}>Register one or more teams for an upcoming tournament</div>
       </div>
 
       <div style={{padding:20}}>
-        {/* Tournament select */}
-        <div style={{marginBottom:16}}>
+
+        {/* Tournament */}
+        <div style={{marginBottom:18}}>
           <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Tournament *</div>
-          <select value={form.tournamentId} onChange={e=>{upd("tournamentId",e.target.value);upd("gradeId","");}}
-            style={{width:"100%",background:C.navyMid,border:`1px solid ${errors.tournamentId?C.red:C.grayL}`,borderRadius:8,
-              color:form.tournamentId?C.white:C.gray,fontSize:14,padding:"11px 14px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}>
+          <select value={form.tournamentId} onChange={e=>{upd("tournamentId",e.target.value);setTeams(ts=>ts.map(t=>({...t,gradeId:""})));}}
+            style={{width:"100%",background:C.navyMid,border:`1px solid ${errors.tournamentId?C.red:C.grayL}`,
+              borderRadius:8,color:form.tournamentId?C.white:C.gray,fontSize:14,padding:"11px 14px",
+              outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}>
             <option value="">Select a tournament...</option>
             {data.tournaments.filter(t=>t.status==="upcoming"||t.status==="active").map(t=>(
               <option key={t.id} value={t.id}>{t.name} — {tDates(t).map(fmtD).join(" → ")}</option>
@@ -2368,58 +2379,119 @@ function RegistrationForm({data, onSubmit, onBack}) {
           <FErr k="tournamentId"/>
         </div>
 
-        {/* Division select */}
-        {selTournament&&<div style={{marginBottom:16}}>
-          <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Grade Division *</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
-            <select value={form.gradeId} onChange={e=>upd("gradeId",e.target.value)}
-              style={{background:C.navyMid,border:`1px solid ${errors.gradeId?C.red:C.grayL}`,borderRadius:8,
-                color:form.gradeId?C.white:C.gray,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
-              <option value="">Select grade...</option>
-              {[...new Set(selTournament.divisions.map(d=>d.gradeId))].map(g=>{
-                const isFull=selTournament.divisions.filter(d=>d.gradeId===g&&d.gender===form.gender).every(d=>{
-                  const cap=d.capacity||8;
-                  const regs=(selTournament.registrations||[]).filter(r=>r.gradeId===d.gradeId&&r.gender===d.gender&&r.status!=="rejected");
-                  return regs.length>=cap;
-                });
-                return <option key={g} value={g} disabled={isFull}>{GDL[g]||g}{isFull?" (FULL)":""}</option>;
-              })}
-            </select>
-            <select value={form.gender} onChange={e=>upd("gender",e.target.value)}
-              style={{background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,
-                color:C.white,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
-              <option>Boys</option><option>Girls</option>
-            </select>
+        {/* Coach info */}
+        <div style={{background:C.navyMid,borderRadius:12,padding:16,marginBottom:18,border:`1px solid ${C.grayL}`}}>
+          <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>
+            Coach / Contact Information
           </div>
-          {fullDivs.length>0&&<div style={{background:C.red+"18",border:`1px solid ${C.red}44`,borderRadius:8,padding:"8px 12px",color:C.red,fontSize:12}}>
-            ⚠ Full divisions: {fullDivs.map(d=>dshort(d.gradeId,d.gender)).join(", ")}
-          </div>}
-          <FErr k="gradeId"/>
-        </div>}
+          {[
+            {k:"coachName",l:"Coach Name *",p:"Full name",type:"text"},
+            {k:"phone",l:"Phone Number *",p:"(555) 555-5555",type:"tel"},
+            {k:"email",l:"Email Address *",p:"coach@email.com",type:"email"},
+          ].map(({k,l,p,type})=>(
+            <div key={k} style={{marginBottom:12}}>
+              <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>{l}</div>
+              <input value={form[k]} onChange={e=>upd(k,e.target.value)} placeholder={p} type={type}
+                style={{width:"100%",background:C.navy,border:`1px solid ${errors[k]?C.red:C.grayL}`,
+                  borderRadius:8,color:C.white,fontSize:14,padding:"11px 14px",
+                  outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+              <FErr k={k}/>
+            </div>
+          ))}
+        </div>
 
-        {/* Team info */}
-        {[{k:"teamName",l:"Team Name *",p:"e.g. Detroit Ballers"},{k:"coachName",l:"Coach Name *",p:"Full name"},{k:"phone",l:"Phone Number *",p:"(555) 555-5555"},{k:"email",l:"Email Address *",p:"coach@email.com"}].map(({k,l,p})=>(
-          <div key={k} style={{marginBottom:16}}>
-            <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>{l}</div>
-            <input value={form[k]} onChange={e=>upd(k,e.target.value)} placeholder={p}
-              type={k==="email"?"email":k==="phone"?"tel":"text"}
-              style={{width:"100%",background:C.navyMid,border:`1px solid ${errors[k]?C.red:C.grayL}`,borderRadius:8,
-                color:C.white,fontSize:14,padding:"11px 14px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
-            <FErr k={k}/>
+        {/* Teams */}
+        <div style={{marginBottom:18}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div style={{color:C.white,fontWeight:800,fontSize:16,fontFamily:"'Barlow Condensed',sans-serif"}}>
+              Teams ({teams.length})
+            </div>
+            <Btn v="teal" onClick={addTeam} sx={{padding:"7px 16px",fontSize:12}}>+ Add Team</Btn>
           </div>
-        ))}
+
+          {teams.map((team,i)=>(
+            <div key={team.id} style={{background:C.navyMid,borderRadius:12,padding:16,marginBottom:12,
+              border:`1px solid ${errors[`teamName_${team.id}`]||errors[`gradeId_${team.id}`]||errors[`full_${team.id}`]?C.red:C.grayL}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                <div style={{color:C.gold,fontWeight:800,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                  Team {i+1}
+                </div>
+                {teams.length>1&&(
+                  <button onClick={()=>removeTeam(team.id)}
+                    style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
+                      borderRadius:8,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                    ✕ Remove
+                  </button>
+                )}
+              </div>
+
+              {/* Team Name */}
+              <div style={{marginBottom:12}}>
+                <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Team Name *</div>
+                <input value={team.teamName} onChange={e=>updTeam(team.id,"teamName",e.target.value)}
+                  placeholder="e.g. Detroit Ballers"
+                  style={{width:"100%",background:C.navy,border:`1px solid ${errors[`teamName_${team.id}`]?C.red:C.grayL}`,
+                    borderRadius:8,color:C.white,fontSize:14,padding:"11px 14px",
+                    outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+                <FErr k={`teamName_${team.id}`}/>
+              </div>
+
+              {/* Grade + Gender */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div>
+                  <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Grade *</div>
+                  <select value={team.gradeId} onChange={e=>updTeam(team.id,"gradeId",e.target.value)}
+                    style={{width:"100%",background:C.navy,border:`1px solid ${errors[`gradeId_${team.id}`]?C.red:C.grayL}`,
+                      borderRadius:8,color:team.gradeId?C.white:C.gray,fontSize:13,padding:"11px 12px",
+                      outline:"none",fontFamily:"inherit"}}>
+                    <option value="">Select grade...</option>
+                    {selTournament
+                      ? [...new Set(selTournament.divisions.map(d=>d.gradeId))].map(g=>{
+                          const full=isDivFull(g,team.gender);
+                          return <option key={g} value={g} disabled={full}>{GDL[g]||g}{full?" (FULL)":""}</option>;
+                        })
+                      : GD.map(g=><option key={g.id} value={g.id}>{GDL[g.id]||g.id}</option>)
+                    }
+                  </select>
+                  <FErr k={`gradeId_${team.id}`}/>
+                </div>
+                <div>
+                  <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Gender *</div>
+                  <select value={team.gender} onChange={e=>updTeam(team.id,"gender",e.target.value)}
+                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,
+                      borderRadius:8,color:C.white,fontSize:13,padding:"11px 12px",outline:"none",fontFamily:"inherit"}}>
+                    <option>Boys</option><option>Girls</option>
+                  </select>
+                </div>
+              </div>
+              {errors[`full_${team.id}`]&&(
+                <div style={{color:C.red,fontSize:11,marginTop:8,fontWeight:600}}>⚠ {errors[`full_${team.id}`]}</div>
+              )}
+            </div>
+          ))}
+
+          {/* Add team button at bottom */}
+          <button onClick={addTeam}
+            style={{width:"100%",padding:"12px 0",background:"transparent",
+              border:`2px dashed ${C.sky}55`,borderRadius:12,color:C.sky,cursor:"pointer",
+              fontWeight:700,fontSize:14,fontFamily:"'Barlow Condensed',sans-serif",
+              letterSpacing:"0.06em",textTransform:"uppercase"}}>
+            + Add Another Team
+          </button>
+        </div>
 
         {/* PayPal info */}
         <div style={{background:C.gold+"18",border:`1px solid ${C.gold}44`,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
           <div style={{color:C.gold,fontWeight:800,fontSize:13,marginBottom:4}}>💰 Payment Info</div>
           <div style={{color:C.gray,fontSize:13,lineHeight:1.6}}>
-            After submitting, you'll be directed to pay via PayPal to <strong style={{color:C.white}}>{PAYPAL}</strong>.
-            Include your team name and tournament in the payment note. Your registration is not confirmed until payment is received.
+            After submitting, pay via PayPal at <strong style={{color:C.white}}>paypal.me/{PAYPAL_USER}</strong>.
+            Include each team name and tournament name in the note. Registration is not confirmed until payment is received.
           </div>
         </div>
 
-        {/* Terms & waiver */}
-        <div style={{background:C.navyMid,borderRadius:10,padding:"14px 16px",marginBottom:16,border:`1px solid ${errors.agreed?C.red:C.grayL}`}}>
+        {/* Terms */}
+        <div style={{background:C.navyMid,borderRadius:10,padding:"14px 16px",marginBottom:16,
+          border:`1px solid ${errors.agreed?C.red:C.grayL}`}}>
           <div style={{color:C.white,fontWeight:700,fontSize:13,marginBottom:10}}>Terms & Waiver</div>
           <div style={{color:C.gray,fontSize:12,lineHeight:1.7,marginBottom:14,maxHeight:120,overflowY:"auto"}}>
             By registering, I acknowledge that: (1) All participants must follow Shoebox Sports rules and code of conduct. (2) Shoebox Sports is not liable for injuries sustained during tournament play. (3) Registration fees are non-refundable unless the tournament is cancelled by Shoebox Sports. (4) Teams may be disqualified for unsportsmanlike conduct. (5) Photo and video of participants may be used for promotional purposes. (6) The coach listed is responsible for all players on the roster. (7) Shoebox Sports reserves the right to refuse registration at their discretion.
@@ -2432,10 +2504,15 @@ function RegistrationForm({data, onSubmit, onBack}) {
           <FErr k="agreed"/>
         </div>
 
-        <Btn v="org" onClick={handleSubmit} dis={submitting} sx={{width:"100%",padding:"14px 0",fontSize:15,marginBottom:12}}>
-          {submitting?"Submitting...":"Submit Registration →"}
+        <Btn v="org" onClick={handleSubmit} dis={submitting}
+          sx={{width:"100%",padding:"14px 0",fontSize:15,marginBottom:12}}>
+          {submitting?"Submitting...":
+            `Submit ${teams.length} Team Registration${teams.length>1?"s":""} →`}
         </Btn>
-        <button onClick={onBack} style={{width:"100%",background:"transparent",border:"none",color:C.gray,cursor:"pointer",fontSize:13,padding:"8px 0"}}>← Back to Tournaments</button>
+        <button onClick={onBack}
+          style={{width:"100%",background:"transparent",border:"none",color:C.gray,cursor:"pointer",fontSize:13,padding:"8px 0"}}>
+          ← Back to Tournaments
+        </button>
       </div>
     </div>
   );
@@ -2524,12 +2601,18 @@ function AdminRegistrations({tournament, onUpdateTournament}) {
   };
 
   const approveAndAdd=(reg)=>{
-    // Add to tournament division
-    const div=tournament.divisions.find(d=>d.gradeId===reg.gradeId&&d.gender===reg.gender);
-    if(!div){alert("No matching division found. Please create the division first.");return;}
+    // Find matching division — create one if it doesn't exist yet
+    let divisions=[...tournament.divisions];
+    let div=divisions.find(d=>d.gradeId===reg.gradeId&&d.gender===reg.gender);
+    if(!div){
+      // Auto-create the division
+      div={id:`div-${Date.now()}`,gradeId:reg.gradeId,gender:reg.gender,teams:[],capacity:8};
+      divisions=[...divisions,div];
+    }
     const newTeam={id:Date.now(),name:reg.teamName,pool:"A",wins:0,losses:0,pf:0,pa:0};
-    const updated={...tournament,
-      divisions:tournament.divisions.map(d=>d.id===div.id?{...d,teams:[...d.teams,newTeam]}:d),
+    const updated={
+      ...tournament,
+      divisions:divisions.map(d=>d.id===div.id?{...d,teams:[...d.teams,newTeam]}:d),
       registrations:(tournament.registrations||[]).map(r=>r.id===reg.id?{...r,status:"approved",teamId:newTeam.id}:r),
     };
     onUpdateTournament(updated);
