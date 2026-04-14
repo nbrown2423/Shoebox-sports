@@ -4629,6 +4629,8 @@ export default function App() {
   };
 
   const onUpdateSchedule=(s)=>setCoachSchedule(s);
+
+  const onSubmitRegistration=async(reg)=>{
     await saveRegistration(reg);
     setData(d=>({...d,tournaments:d.tournaments.map(t=>{
       if(t.id!==reg.tournamentId) return t;
