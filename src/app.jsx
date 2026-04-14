@@ -3204,13 +3204,32 @@ function PublicTournament({tournament, onBack, onRegister, onViewTeams}) {
 // ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://xetqslvyqcydblldqsrc.supabase.co";
 const SUPABASE_KEY = "sb_publishable_0Dw8EvFfl1xA-__QXvUI_Q_mUHAGUlq";
+const SUPABASE_SERVICE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_KEY;
 
+// Public fetch — used for tournaments and registrations
 async function sbFetch(path, opts={}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
     ...opts,
     headers: {
       "apikey": SUPABASE_KEY,
       "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": opts.prefer || "",
+      ...opts.headers,
+    },
+  });
+  if (!res.ok) return null;
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+// Secure fetch — used for bookings and coach schedule (bypasses RLS)
+async function sbSecure(path, opts={}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+    ...opts,
+    headers: {
+      "apikey": SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
       "Content-Type": "application/json",
       "Prefer": opts.prefer || "",
       ...opts.headers,
@@ -3228,7 +3247,6 @@ async function loadFromDB() {
 }
 
 async function saveTournamentToDB(tournament) {
-  // Upsert — insert or update based on tournament id
   await sbFetch("/tournaments", {
     method: "POST",
     prefer: "resolution=merge-duplicates",
@@ -3268,32 +3286,34 @@ async function deleteRegistration(id) {
   await sbFetch(`/registrations?id=eq.${id}`, { method: "DELETE" });
 }
 
+// Bookings — use service role for all operations (data is protected)
 async function loadBookings() {
-  const rows = await sbFetch("/bookings?select=*&order=created_at.asc");
+  const rows = await sbSecure("/bookings?select=*&order=created_at.asc");
   return rows || [];
 }
 async function saveBooking(b) {
-  await sbFetch("/bookings", {
+  await sbSecure("/bookings", {
     method:"POST", headers:{"Prefer":"resolution=merge-duplicates"},
     body:JSON.stringify({id:b.id, data:b}),
   });
 }
 async function updateBooking(b) {
-  await sbFetch(`/bookings?id=eq.${b.id}`, {
+  await sbSecure(`/bookings?id=eq.${b.id}`, {
     method:"PATCH", body:JSON.stringify({data:b}),
   });
 }
 async function deleteBooking(id) {
-  await sbFetch(`/bookings?id=eq.${id}`, {method:"DELETE"});
+  await sbSecure(`/bookings?id=eq.${id}`, {method:"DELETE"});
 }
+
+// Coach schedule — use service role for all operations (data is protected)
 async function loadSchedule() {
-  const rows = await sbFetch("/coach_schedule?select=*");
+  const rows = await sbSecure("/coach_schedule?select=*");
   if(!rows||!rows.length) return {availability:{},blocked:[]};
   return rows[0].data || {availability:{},blocked:[]};
 }
 async function saveSchedule(sched) {
-  // Upsert single row with id=1
-  await sbFetch("/coach_schedule", {
+  await sbSecure("/coach_schedule", {
     method:"POST", headers:{"Prefer":"resolution=merge-duplicates"},
     body:JSON.stringify({id:1, data:sched}),
   });
