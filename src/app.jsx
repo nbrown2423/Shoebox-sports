@@ -1713,17 +1713,6 @@ function AdminBracket({tournament}) {
     </div>
   );
 }
-  return (
-    <div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:18}}>
-        {tournament.divisions.map((d,i)=>(
-          <button key={d.id} onClick={()=>setADiv(d.id)} style={{padding:"8px 14px",borderRadius:8,
-            border:`1px solid ${aDiv===d.id?dc(i):C.grayL}`,background:aDiv===d.id?dc(i)+"22":"transparent",
-            color:aDiv===d.id?dc(i):C.gray,cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>
-            {dshort(d.gradeId,d.gender)}
-          </button>
-        ))}
-      </div>
 // ─── ADMIN COURTS GRID ────────────────────────────────────────────────────────
 function AdminCourts({tournament}) {
   const dates=tDates(tournament);
