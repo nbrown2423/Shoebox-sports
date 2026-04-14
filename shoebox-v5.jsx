@@ -1862,39 +1862,121 @@ function PublicTournament({tournament, onBack}) {
   );
 }
 
+// ─── SUPABASE CONFIG ──────────────────────────────────────────────────────────
+const SUPABASE_URL = "https://xetqslvyqcydblldqsrc.supabase.co";
+const SUPABASE_KEY = "sb_publishable_0Dw8EvFfl1xA-__QXvUI_Q_mUHAGUlq";
+
+async function sbFetch(path, opts={}) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+    ...opts,
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": opts.prefer || "",
+      ...opts.headers,
+    },
+  });
+  if (!res.ok) return null;
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+async function loadFromDB() {
+  const rows = await sbFetch("/tournaments?select=*&order=created_at.asc");
+  if (!rows || rows.length === 0) return { tournaments: [] };
+  return { tournaments: rows.map(r => r.data) };
+}
+
+async function saveTournamentToDB(tournament) {
+  // Upsert — insert or update based on tournament id
+  await sbFetch("/tournaments", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates",
+    headers: { "Prefer": "resolution=merge-duplicates" },
+    body: JSON.stringify({ id: tournament.id, data: tournament }),
+  });
+}
+
+async function updateTournamentInDB(tournament) {
+  await sbFetch(`/tournaments?id=eq.${tournament.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ data: tournament }),
+  });
+}
+
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [data,setData]           = useState(()=>buildSeed());
+  const [data,setData]           = useState({ tournaments: [] });
+  const [loading,setLoading]     = useState(true);
   const [adminAuth,setAdminAuth] = useState(false);
   const [showAdminLogin,setShowAdminLogin] = useState(false);
   const [selectedTId,setSelectedTId]       = useState(null);
   const [logoUrl,setLogoUrl]               = useState("https://raw.githubusercontent.com/nbrown2423/Shoebox-sports/main/logo.jpg");
 
+  // Load fonts
   useEffect(()=>{
     const l=document.createElement("link");
     l.href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=DM+Sans:wght@400;500;600;700;800&display=swap";
     l.rel="stylesheet"; document.head.appendChild(l);
   },[]);
 
-  const onScore=(gId,h,a)=>setData(d=>({
-    ...d,
-    tournaments: d.tournaments.map(t=>{
-      const gamesAfterScore=t.games.map(g=>g.id===gId?{...g,homeScore:h,awayScore:a,status:"final"}:g);
-      const divisions=t.divisions.map(div=>{
-        const teams=div.teams.map(tm=>({...tm,wins:0,losses:0,pf:0,pa:0}));
-        gamesAfterScore.filter(g=>g.divisionId===div.id&&g.phase==="pool"&&g.status==="final").forEach(g=>{
-          const ht=teams.find(x=>x.id===g.homeId), at=teams.find(x=>x.id===g.awayId);
-          if(!ht||!at) return;
-          ht.pf+=g.homeScore; ht.pa+=g.awayScore; at.pf+=g.awayScore; at.pa+=g.homeScore;
-          if(g.homeScore>g.awayScore){ht.wins++;at.losses++;}else{at.wins++;ht.losses++;}
+  // Load data from Supabase on mount
+  useEffect(()=>{
+    loadFromDB().then(d=>{ setData(d); setLoading(false); });
+  },[]);
+
+  const onScore=(gId,h,a)=>setData(d=>{
+    const next = {
+      ...d,
+      tournaments: d.tournaments.map(t=>{
+        const gamesAfterScore=t.games.map(g=>g.id===gId?{...g,homeScore:h,awayScore:a,status:"final"}:g);
+        const divisions=t.divisions.map(div=>{
+          const teams=div.teams.map(tm=>({...tm,wins:0,losses:0,pf:0,pa:0}));
+          gamesAfterScore.filter(g=>g.divisionId===div.id&&g.phase==="pool"&&g.status==="final").forEach(g=>{
+            const ht=teams.find(x=>x.id===g.homeId), at=teams.find(x=>x.id===g.awayId);
+            if(!ht||!at) return;
+            ht.pf+=g.homeScore; ht.pa+=g.awayScore; at.pf+=g.awayScore; at.pa+=g.homeScore;
+            if(g.homeScore>g.awayScore){ht.wins++;at.losses++;}else{at.wins++;ht.losses++;}
+          });
+          return {...div,teams};
         });
-        return {...div,teams};
-      });
-      return {...t,divisions,games:seedBracket(divisions,gamesAfterScore)};
-    })
-  }));
-  const onUpdateGames=(tId,games)=>setData(d=>({...d,tournaments:d.tournaments.map(t=>t.id===tId?{...t,games}:t)}));
-  const onAdd=t=>setData(d=>({...d,tournaments:[...d.tournaments,t]}));
+        const updated = {...t,divisions,games:seedBracket(divisions,gamesAfterScore)};
+        updateTournamentInDB(updated); // save to DB
+        return updated;
+      })
+    };
+    return next;
+  });
+
+  const onUpdateGames=(tId,games)=>setData(d=>{
+    const next = {...d,tournaments:d.tournaments.map(t=>{
+      if(t.id!==tId) return t;
+      const updated = {...t,games};
+      updateTournamentInDB(updated); // save to DB
+      return updated;
+    })};
+    return next;
+  });
+
+  const onAdd=t=>{
+    saveTournamentToDB(t); // save to DB
+    setData(d=>({...d,tournaments:[...d.tournaments,t]}));
+  };
+
+  // Loading screen
+  if (loading) return (
+    <div style={{minHeight:"100vh",background:C.navy,display:"flex",flexDirection:"column",
+      alignItems:"center",justifyContent:"center",fontFamily:"'DM Sans',sans-serif"}}>
+      <Logo sz={60} txt/>
+      <div style={{color:C.gray,fontSize:14,marginTop:24,letterSpacing:"0.08em",textTransform:"uppercase",fontWeight:700}}>
+        Loading...
+      </div>
+      <div style={{width:40,height:3,background:C.sky,borderRadius:2,marginTop:16,
+        animation:"pulse 1.2s ease-in-out infinite"}}/>
+      <style>{`@keyframes pulse{0%,100%{opacity:0.3}50%{opacity:1}}`}</style>
+    </div>
+  );
 
   // Admin login screen
   if (showAdminLogin && !adminAuth) {
@@ -1906,7 +1988,6 @@ export default function App() {
     return (
       <div style={{background:C.navy,minHeight:"100vh"}}>
         <Admin data={data} onScore={onScore} onUpdateGames={onUpdateGames} onAdd={onAdd} logoUrl={logoUrl} onSaveLogoUrl={setLogoUrl}/>
-        {/* Admin logout button */}
         <button onClick={()=>setAdminAuth(false)}
           style={{position:"fixed",bottom:18,right:18,zIndex:999,
             background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:50,
@@ -1933,7 +2014,6 @@ export default function App() {
   return (
     <div style={{background:C.navy,minHeight:"100vh"}}>
       <PublicHome data={data} onSelectTournament={id=>setSelectedTId(id)} logoUrl={logoUrl}/>
-      {/* Hidden admin access — small link in footer */}
       <div style={{textAlign:"center",paddingBottom:20}}>
         <button onClick={()=>setShowAdminLogin(true)}
           style={{background:"transparent",border:"none",color:C.grayL,
