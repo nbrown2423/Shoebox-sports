@@ -5030,8 +5030,8 @@ export default function App() {
 
   const signOut = () => { setAdminAuth(""); sessionStorage.removeItem(ADMIN_SESSION_KEY); };
 
-  // Login screen
-  if (showAdminLogin && !adminAuth) {
+  // Login screen — show when explicitly requested or not yet authed
+  if (showAdminLogin) {
     return <LoginPage logoUrl={logoUrl} onSuccess={(role)=>{setAdminAuth(role);setShowAdminLogin(false);}}/>;
   }
 
@@ -5120,7 +5120,11 @@ export default function App() {
     <div style={{background:C.navy,minHeight:"100vh"}}>
       <PublicHome data={data} onSelectTournament={id=>setSelectedTId(id)} logoUrl={logoUrl} onRegister={()=>setShowRegister(true)} onRegister3v3={()=>setShow3v3(true)} onBooking={()=>setShowBooking(true)}/>
       <div style={{textAlign:"center",paddingBottom:20}}>
-        <button onClick={()=>setShowAdminLogin(true)}
+        <button onClick={()=>{
+          // If already authed, sign out first so they can pick a role
+          if(adminAuth) signOut();
+          setShowAdminLogin(true);
+        }}
           style={{background:"transparent",border:"none",color:C.grayL,
             cursor:"pointer",fontSize:11,fontFamily:"'DM Sans',sans-serif"}}>
           Admin Login
