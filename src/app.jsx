@@ -2174,7 +2174,7 @@ function AdminTeams({tournament, onUpdateTournament}) {
   );
 }
 
-function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTournament,logoUrl,onSaveLogoUrl,onGoHome}) {
+function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTournament,logoUrl,onSaveLogoUrl,onGoHome,bookings,coachSchedule,onUpdateBooking,onUpdateSchedule}) {
   const [aTId,setATId]=useState(data.tournaments[0]?.id);
   const [tab,setTab]=useState("schedule");
   const [showCreate,setShowCreate]=useState(false);
@@ -2189,6 +2189,7 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
     {id:"bracket",icon:"🏆",l:"Bracket"},
     {id:"courts",icon:"🏟",l:"Courts"},
     {id:"registrations",icon:"📝",l:"Registrations"},
+    {id:"bookings",icon:"🏋️",l:"Training"},
     {id:"settings",icon:"⚙️",l:"Settings"},
   ];
   return (
@@ -2278,6 +2279,8 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
           ? <AdminRegistrations tournament={t} onUpdateTournament={onEditTournament}/>
           : tab==="teams"&&t
           ? <AdminTeams tournament={t} onUpdateTournament={onEditTournament}/>
+          : tab==="bookings"
+          ? <AdminBookings bookings={bookings} schedule={coachSchedule} onUpdateBooking={onUpdateBooking} onDeleteBooking={async(id)=>{await deleteBooking(id);onUpdateBooking({id},"delete");}} onUpdateSchedule={onUpdateSchedule}/>
           : t?<>
           {tab==="schedule"&&<AdminSchedule tournament={t} onScore={onScore} onUpdateGames={g=>onUpdateGames(t.id,g)}/>}
           {tab==="standings"&&<AdminStandings tournament={t}/>}
@@ -2371,7 +2374,7 @@ function AdminLogin({onSuccess, logoUrl}) {
 }
 
 // ─── PUBLIC HOME PAGE ─────────────────────────────────────────────────────────
-function PublicHome({data, onSelectTournament, logoUrl, onRegister, onRegister3v3}) {
+function PublicHome({data, onSelectTournament, logoUrl, onRegister, onRegister3v3, onBooking}) {
   const active   = data.tournaments.filter(t=>t.status==="active");
   const upcoming = data.tournaments.filter(t=>t.status==="upcoming");
   const past     = data.tournaments.filter(t=>t.status==="complete");
@@ -2474,7 +2477,7 @@ function PublicHome({data, onSelectTournament, logoUrl, onRegister, onRegister3v
         {/* 3v3 Register CTA */}
         <div onClick={onRegister3v3}
           style={{background:`linear-gradient(135deg,${C.sky},${C.light})`,borderRadius:14,
-            padding:"16px 20px",marginBottom:20,cursor:"pointer",
+            padding:"16px 20px",marginBottom:12,cursor:"pointer",
             display:"flex",justifyContent:"space-between",alignItems:"center",
             boxShadow:`0 4px 20px ${C.sky}44`}}>
           <div>
@@ -2486,6 +2489,21 @@ function PublicHome({data, onSelectTournament, logoUrl, onRegister, onRegister3v
             <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>Sign up for 3v3 tournament play</div>
           </div>
           <div style={{color:"#fff",fontSize:24}}>🏀</div>
+        </div>
+
+        {/* Training Sessions CTA */}
+        <div onClick={onBooking}
+          style={{background:`linear-gradient(135deg,#6B3FA0,#9B59B6)`,borderRadius:14,
+            padding:"16px 20px",marginBottom:20,cursor:"pointer",
+            display:"flex",justifyContent:"space-between",alignItems:"center",
+            boxShadow:"0 4px 20px #6B3FA044"}}>
+          <div>
+            <div style={{color:"#fff",fontWeight:900,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:3}}>
+              Training Sessions
+            </div>
+            <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>Book a session with {COACH_NAME} · 1-on-1 & Group</div>
+          </div>
+          <div style={{color:"#fff",fontSize:24}}>🏋️</div>
         </div>
         {/* Live tournaments */}
         {active.length>0&&<>
@@ -2869,6 +2887,37 @@ async function updateRegistration(reg) {
 
 async function deleteRegistration(id) {
   await sbFetch(`/registrations?id=eq.${id}`, { method: "DELETE" });
+}
+
+async function loadBookings() {
+  const rows = await sbFetch("/bookings?select=*&order=created_at.asc");
+  return rows || [];
+}
+async function saveBooking(b) {
+  await sbFetch("/bookings", {
+    method:"POST", headers:{"Prefer":"resolution=merge-duplicates"},
+    body:JSON.stringify({id:b.id, data:b}),
+  });
+}
+async function updateBooking(b) {
+  await sbFetch(`/bookings?id=eq.${b.id}`, {
+    method:"PATCH", body:JSON.stringify({data:b}),
+  });
+}
+async function deleteBooking(id) {
+  await sbFetch(`/bookings?id=eq.${id}`, {method:"DELETE"});
+}
+async function loadSchedule() {
+  const rows = await sbFetch("/coach_schedule?select=*");
+  if(!rows||!rows.length) return {availability:{},blocked:[]};
+  return rows[0].data || {availability:{},blocked:[]};
+}
+async function saveSchedule(sched) {
+  // Upsert single row with id=1
+  await sbFetch("/coach_schedule", {
+    method:"POST", headers:{"Prefer":"resolution=merge-duplicates"},
+    body:JSON.stringify({id:1, data:sched}),
+  });
 }
 
 // ─── PUBLIC REGISTRATION FORM ────────────────────────────────────────────────
@@ -3783,9 +3832,711 @@ function ThreevThreeForm({onBack, logoUrl}) {
   );
 }
 
+// ─── BOOKING CONSTANTS ────────────────────────────────────────────────────────
+const COACH_NAME = "Coach Star";
+const SESSIONS = [
+  {id:"1on1", label:"1-on-1 Session", price:60, desc:"Private 1 hour session"},
+  {id:"group", label:"Group Session",  price:50, desc:"Group 1 hour session"},
+];
+const WEEKDAY_SLOTS = ["4:00 PM","5:00 PM","6:00 PM","7:00 PM"];
+const WEEKEND_SLOTS = ["8:00 AM","9:00 AM","10:00 AM","11:00 AM","12:00 PM",
+  "1:00 PM","2:00 PM","3:00 PM","4:00 PM","5:00 PM","6:00 PM","7:00 PM"];
+const DAYS_OF_WEEK = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+// Helper — get dates for next N days starting today
+function getUpcomingDates(n=28) {
+  const dates=[];
+  const today=new Date(); today.setHours(0,0,0,0);
+  for(let i=0;i<n;i++){
+    const d=new Date(today); d.setDate(today.getDate()+i);
+    dates.push(d);
+  }
+  return dates;
+}
+function dateKey(d) {
+  return d.toISOString().slice(0,10); // YYYY-MM-DD
+}
+function isWeekday(d) { return d.getDay()>=1&&d.getDay()<=5; }
+function isWeekend(d) { return d.getDay()===0||d.getDay()===6; }
+function fmtDate(d) {
+  return d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
+}
+
+// ─── PUBLIC BOOKING FORM ──────────────────────────────────────────────────────
+function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
+  const [step, setStep] = useState(1); // 1=session, 2=date/time, 3=info, 4=pay
+  const [session, setSession] = useState(null);
+  const [selDate, setSelDate] = useState(null);
+  const [selTime, setSelTime] = useState(null);
+  const [form, setForm] = useState({name:"",email:"",phone:"",payMethod:"online"});
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState({});
+  const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const dates = getUpcomingDates(28);
+
+  // Get available slots for a date
+  const getSlotsForDate = (d) => {
+    if(!d) return [];
+    const key = dateKey(d);
+    const dow = d.getDay();
+    const isWD = isWeekday(d);
+    // Mon-Fri: fixed 4-8pm unless custom availability set
+    let base = isWD ? WEEKDAY_SLOTS : [];
+    // Weekends: use coach-set availability
+    if(isWeekend(d)) {
+      base = schedule?.availability?.[DAYS_OF_WEEK[dow]] || [];
+    }
+    // Remove blocked slots
+    const blocked = (schedule?.blocked || []).filter(b=>b.date===key).map(b=>b.time);
+    // Remove already booked slots
+    const booked = bookings.filter(b=>b.date===key&&b.status!=="cancelled").map(b=>b.time);
+    return base.filter(s=>!blocked.includes(s)&&!booked.includes(s));
+  };
+
+  const validate = () => {
+    const e = {};
+    if(!form.name.trim()) e.name="Name is required";
+    if(!form.email.trim()||!form.email.includes("@")) e.email="Valid email is required";
+    if(!form.phone.trim()) e.phone="Phone is required";
+    setErrors(e);
+    return Object.keys(e).length===0;
+  };
+
+  const handleSubmit = async () => {
+    if(!validate()) return;
+    setSubmitting(true);
+    const booking = {
+      id: Date.now(),
+      sessionId: session.id,
+      sessionLabel: session.label,
+      price: session.price,
+      date: dateKey(selDate),
+      dateLabel: fmtDate(selDate),
+      time: selTime,
+      clientName: form.name.trim(),
+      clientEmail: form.email.trim(),
+      clientPhone: form.phone.trim(),
+      payMethod: form.payMethod,
+      payStatus: form.payMethod==="inperson"?"pay_inperson":"unpaid",
+      status: "pending",
+      bookedAt: new Date().toISOString(),
+    };
+    await onSubmit(booking);
+
+    // Email admin
+    await sendEmail(EJS.adminTemplate, {
+      tournament_name: "Training Session Booking",
+      tournament_dates: `${booking.dateLabel} at ${booking.time}`,
+      location: "Shoebox Sports - Fenton, MI",
+      coach_name: booking.clientName,
+      coach_email: booking.clientEmail,
+      coach_phone: booking.clientPhone,
+      teams_list: `Session: ${booking.sessionLabel} ($${booking.price})\nDate: ${booking.dateLabel}\nTime: ${booking.time}\nPayment: ${booking.payMethod==="online"?"Online (Clover)":"In Person"}`,
+      team_count: "1",
+      submitted_at: new Date().toLocaleString(),
+    });
+    // Email client
+    await sendEmail(EJS.coachTemplate, {
+      coach_name: booking.clientName,
+      coach_email: booking.clientEmail,
+      tournament_name: `Training Session with ${COACH_NAME}`,
+      tournament_dates: `${booking.dateLabel} at ${booking.time}`,
+      location: "Shoebox Sports - Fenton, MI",
+      teams_list: `Session: ${booking.sessionLabel}\nDuration: 1 Hour\nPrice: $${booking.price}\nPayment: ${booking.payMethod==="online"?"Online via Clover":"In Person"}`,
+      team_count: "1",
+      payment_link: booking.payMethod==="online" ? PAYMENT_LINK : "Pay at your session",
+    });
+
+    setSubmitting(false);
+    setSubmitted(true);
+  };
+
+  const FErr=({k})=>errors[k]?<div style={{color:C.red,fontSize:11,marginTop:4,fontWeight:600}}>{errors[k]}</div>:null;
+
+  // Confirmation
+  if(submitted) return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
+      <div style={{padding:"50px 24px 24px",textAlign:"center"}}>
+        <div style={{fontSize:48,marginBottom:12}}>✅</div>
+        <div style={{color:C.green,fontWeight:900,fontSize:26,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>Session Booked!</div>
+        <div style={{color:C.gray,fontSize:14,marginBottom:24,lineHeight:1.6}}>
+          Your session with <strong style={{color:C.white}}>{COACH_NAME}</strong> is confirmed for{" "}
+          <strong style={{color:C.sky}}>{fmtDate(selDate)} at {selTime}</strong>.
+          A confirmation was sent to <span style={{color:C.sky}}>{form.email}</span>.
+        </div>
+        <div style={{background:C.navyMid,borderRadius:14,padding:20,marginBottom:20,textAlign:"left",border:`1px solid ${C.green}44`}}>
+          <div style={{color:C.green,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Booking Summary</div>
+          {[
+            ["Session",session.label],
+            ["Date",fmtDate(selDate)],
+            ["Time",selTime],
+            ["Duration","1 Hour"],
+            ["Price",`$${session.price}`],
+            ["Payment",form.payMethod==="online"?"Online via Clover":"In Person"],
+          ].map(([l,v])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+              <span style={{color:C.gray,fontSize:13}}>{l}</span>
+              <span style={{color:C.white,fontWeight:700,fontSize:13}}>{v}</span>
+            </div>
+          ))}
+        </div>
+        {form.payMethod==="online"&&(
+          <div style={{background:C.navyMid,borderRadius:14,padding:20,marginBottom:20,border:`1px solid ${C.gold}44`}}>
+            <div style={{color:C.gold,fontWeight:800,fontSize:14,marginBottom:8}}>💰 Complete Payment</div>
+            <div style={{color:C.gray,fontSize:13,marginBottom:14,lineHeight:1.5}}>
+              Pay your <strong style={{color:C.white}}>${session.price}</strong> session fee through Clover. Include your name and session date in the note.
+            </div>
+            <a href={PAYMENT_LINK} target="_blank" rel="noopener noreferrer"
+              style={{display:"inline-block",background:`linear-gradient(135deg,#00A651,#007A3D)`,
+                color:"#fff",fontWeight:800,fontSize:15,padding:"12px 28px",borderRadius:10,
+                textDecoration:"none",fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.06em",textTransform:"uppercase"}}>
+              Pay Now →
+            </a>
+          </div>
+        )}
+        {form.payMethod==="inperson"&&(
+          <div style={{background:C.navyMid,borderRadius:14,padding:16,marginBottom:20,border:`1px solid ${C.sky}44`}}>
+            <div style={{color:C.sky,fontSize:13,lineHeight:1.6}}>
+              💵 You've selected <strong>Pay In Person</strong>. Please bring <strong style={{color:C.white}}>${session.price} cash or card</strong> to your session.
+            </div>
+          </div>
+        )}
+        <Btn v="pri" onClick={onBack} sx={{padding:"11px 28px"}}>← Back to Home</Btn>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
+      {/* Header */}
+      <div style={{background:`linear-gradient(135deg,${C.navyLight},${C.navyMid})`,
+        padding:"24px 20px 20px",borderBottom:`1px solid ${C.grayL}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+          <div style={{fontSize:32}}>🏋️</div>
+          <div>
+            <div style={{color:C.white,fontWeight:900,fontSize:22,fontFamily:"'Barlow Condensed',sans-serif"}}>
+              Training Session
+            </div>
+            <div style={{color:C.sky,fontSize:13,fontWeight:600}}>with {COACH_NAME} · Shoebox Sports</div>
+          </div>
+        </div>
+        {/* Step dots */}
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {["Session","Date & Time","Your Info","Payment"].map((s,i)=>(
+            <div key={s} style={{display:"flex",alignItems:"center",gap:6}}>
+              <div style={{width:22,height:22,borderRadius:"50%",display:"flex",alignItems:"center",
+                justifyContent:"center",fontSize:10,fontWeight:800,
+                background:step>i+1?C.green:step===i+1?C.sky:C.grayD,
+                color:step>=i+1?"#fff":C.gray}}>{step>i+1?"✓":i+1}</div>
+              {i<3&&<div style={{width:16,height:1,background:C.grayL}}/>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:20}}>
+
+        {/* Step 1: Session Type */}
+        {step===1&&<>
+          <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Choose Session Type</div>
+          <div style={{color:C.gray,fontSize:13,marginBottom:20}}>All sessions are 1 hour</div>
+          {SESSIONS.map(s=>(
+            <div key={s.id} onClick={()=>setSession(s)}
+              style={{background:session?.id===s.id?C.sky+"22":C.navyMid,borderRadius:14,
+                padding:20,marginBottom:12,cursor:"pointer",
+                border:`2px solid ${session?.id===s.id?C.sky:C.grayL}`,transition:"all 0.15s"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{color:C.white,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif"}}>{s.label}</div>
+                  <div style={{color:C.gray,fontSize:13,marginTop:4}}>{s.desc}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:C.gold,fontWeight:900,fontSize:24,fontFamily:"'Barlow Condensed',sans-serif"}}>${s.price}</div>
+                  <div style={{color:C.gray,fontSize:11}}>per hour</div>
+                </div>
+              </div>
+              {session?.id===s.id&&<div style={{color:C.sky,fontSize:12,fontWeight:700,marginTop:10}}>✓ Selected</div>}
+            </div>
+          ))}
+          <Btn v="pri" onClick={()=>setStep(2)} dis={!session} sx={{width:"100%",padding:"13px 0",fontSize:15,marginTop:8}}>
+            Next → Pick a Date
+          </Btn>
+        </>}
+
+        {/* Step 2: Date & Time */}
+        {step===2&&<>
+          <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Pick a Date & Time</div>
+          <div style={{color:C.gray,fontSize:13,marginBottom:16}}>Mon–Fri: 4pm–8pm · Sat–Sun: varies</div>
+
+          {/* Date picker */}
+          <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:12,marginBottom:16}}>
+            {dates.map(d=>{
+              const key=dateKey(d);
+              const slots=getSlotsForDate(d);
+              const hasSlots=slots.length>0;
+              const isSelected=selDate&&dateKey(selDate)===key;
+              const isSun=d.getDay()===0;
+              return (
+                <div key={key} onClick={()=>{if(!hasSlots)return;setSelDate(d);setSelTime(null);}}
+                  style={{flexShrink:0,width:64,background:isSelected?C.sky:hasSlots?C.navyMid:C.grayD,
+                    borderRadius:12,padding:"10px 8px",textAlign:"center",cursor:hasSlots?"pointer":"not-allowed",
+                    border:`2px solid ${isSelected?C.sky:hasSlots?C.grayL:C.grayD}`,opacity:hasSlots?1:0.4}}>
+                  <div style={{color:isSelected?"#fff":C.gray,fontSize:10,fontWeight:700,textTransform:"uppercase"}}>
+                    {DAYS_OF_WEEK[d.getDay()].slice(0,3)}
+                  </div>
+                  <div style={{color:isSelected?"#fff":hasSlots?C.white:C.gray,fontWeight:800,fontSize:16,margin:"4px 0"}}>
+                    {d.getDate()}
+                  </div>
+                  <div style={{color:isSelected?"rgba(255,255,255,0.8)":C.gray,fontSize:9}}>
+                    {hasSlots?`${slots.length} open`:"Full"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Time slots */}
+          {selDate&&(()=>{
+            const slots=getSlotsForDate(selDate);
+            return (
+              <div style={{marginBottom:20}}>
+                <div style={{color:C.gold,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>
+                  Available Times — {fmtDate(selDate)}
+                </div>
+                {slots.length===0?(
+                  <div style={{color:C.gray,fontSize:13,textAlign:"center",padding:"20px 0"}}>No available slots for this day</div>
+                ):(
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                    {slots.map(s=>(
+                      <button key={s} onClick={()=>setSelTime(s)}
+                        style={{padding:"12px 8px",borderRadius:10,cursor:"pointer",textAlign:"center",
+                          border:`2px solid ${selTime===s?C.sky:C.grayL}`,
+                          background:selTime===s?C.sky+"22":C.navyMid,
+                          color:selTime===s?C.sky:C.white,fontWeight:700,fontSize:13}}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          <div style={{display:"flex",gap:10}}>
+            <Btn v="gh" onClick={()=>setStep(1)} sx={{flex:1}}>← Back</Btn>
+            <Btn v="pri" onClick={()=>setStep(3)} dis={!selDate||!selTime} sx={{flex:2}}>Next → Your Info</Btn>
+          </div>
+        </>}
+
+        {/* Step 3: Client Info */}
+        {step===3&&<>
+          <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:16}}>Your Information</div>
+          {[
+            {k:"name",l:"Full Name *",p:"Your full name",type:"text"},
+            {k:"email",l:"Email Address *",p:"yourname@email.com",type:"email"},
+            {k:"phone",l:"Phone Number *",p:"(555) 555-5555",type:"tel"},
+          ].map(({k,l,p,type})=>(
+            <div key={k} style={{marginBottom:14}}>
+              <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>{l}</div>
+              <input value={form[k]} onChange={e=>upd(k,e.target.value)} placeholder={p} type={type}
+                style={{width:"100%",background:C.navyMid,border:`1px solid ${errors[k]?C.red:C.grayL}`,
+                  borderRadius:8,color:C.white,fontSize:14,padding:"11px 14px",
+                  outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+              <FErr k={k}/>
+            </div>
+          ))}
+          <div style={{background:C.navyMid,borderRadius:12,padding:14,marginBottom:16,border:`1px solid ${C.grayL}`}}>
+            <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Booking Summary</div>
+            {[["Session",session?.label],["Date",fmtDate(selDate)],["Time",selTime],["Price",`$${session?.price}`]].map(([l,v])=>(
+              <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:`1px solid ${C.grayL}`}}>
+                <span style={{color:C.gray,fontSize:12}}>{l}</span>
+                <span style={{color:C.white,fontWeight:600,fontSize:12}}>{v}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            <Btn v="gh" onClick={()=>setStep(2)} sx={{flex:1}}>← Back</Btn>
+            <Btn v="pri" onClick={()=>{if(validate())setStep(4);}} sx={{flex:2}}>Next → Payment</Btn>
+          </div>
+        </>}
+
+        {/* Step 4: Payment Method */}
+        {step===4&&<>
+          <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Payment Method</div>
+          <div style={{color:C.gray,fontSize:13,marginBottom:20}}>How would you like to pay for your session?</div>
+
+          {[
+            {id:"online",icon:"💳",title:"Pay Online",desc:`Secure payment via Clover · $${session?.price}`,color:C.green},
+            {id:"inperson",icon:"💵",title:"Pay In Person",desc:`Bring cash or card to your session · $${session?.price}`,color:C.sky},
+          ].map(opt=>(
+            <div key={opt.id} onClick={()=>upd("payMethod",opt.id)}
+              style={{background:form.payMethod===opt.id?opt.color+"18":C.navyMid,borderRadius:14,
+                padding:18,marginBottom:12,cursor:"pointer",
+                border:`2px solid ${form.payMethod===opt.id?opt.color:C.grayL}`,transition:"all 0.15s"}}>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <div style={{fontSize:28}}>{opt.icon}</div>
+                <div>
+                  <div style={{color:C.white,fontWeight:800,fontSize:15}}>{opt.title}</div>
+                  <div style={{color:C.gray,fontSize:12,marginTop:3}}>{opt.desc}</div>
+                </div>
+                {form.payMethod===opt.id&&<div style={{marginLeft:"auto",color:opt.color,fontWeight:800,fontSize:16}}>✓</div>}
+              </div>
+            </div>
+          ))}
+
+          <div style={{background:C.gold+"18",border:`1px solid ${C.gold}44`,borderRadius:10,padding:"12px 14px",marginBottom:20}}>
+            <div style={{color:C.gold,fontSize:12,fontWeight:700,marginBottom:2}}>📌 Note</div>
+            <div style={{color:C.gray,fontSize:12,lineHeight:1.5}}>
+              Your booking is not confirmed until payment is received. Online payments can be made immediately after booking.
+            </div>
+          </div>
+
+          <Btn v="org" onClick={handleSubmit} dis={submitting}
+            sx={{width:"100%",padding:"14px 0",fontSize:15,marginBottom:10}}>
+            {submitting?"Booking...":"✓ Confirm Booking"}
+          </Btn>
+          <Btn v="gh" onClick={()=>setStep(3)} sx={{width:"100%",padding:"11px 0"}}>← Back</Btn>
+        </>}
+
+      </div>
+    </div>
+  );
+}
+
+// ─── ADMIN BOOKING CALENDAR ───────────────────────────────────────────────────
+function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, onUpdateSchedule}) {
+  const [tab, setTab] = useState("calendar");
+  const [selDate, setSelDate] = useState(dateKey(new Date()));
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [addForm, setAddForm] = useState({name:"",email:"",phone:"",sessionId:"1on1",time:"4:00 PM",payMethod:"inperson",payStatus:"unpaid"});
+  const [localSched, setLocalSched] = useState(schedule);
+  const upd=(k,v)=>setAddForm(f=>({...f,[k]:v}));
+
+  const dates = getUpcomingDates(28);
+  const todayBookings = bookings.filter(b=>b.date===selDate&&b.status!=="cancelled");
+  const selDateObj = dates.find(d=>dateKey(d)===selDate)||new Date(selDate+"T12:00:00");
+
+  const addManual=async()=>{
+    const s=SESSIONS.find(x=>x.id===addForm.sessionId);
+    const b={
+      id:Date.now(), sessionId:s.id, sessionLabel:s.label, price:s.price,
+      date:selDate, dateLabel:fmtDate(selDateObj), time:addForm.time,
+      clientName:addForm.name.trim(), clientEmail:addForm.email.trim(),
+      clientPhone:addForm.phone.trim(), payMethod:addForm.payMethod,
+      payStatus:addForm.payStatus, status:"confirmed",
+      bookedAt:new Date().toISOString(), addedByAdmin:true,
+    };
+    await saveBooking(b);
+    onUpdateBooking(b,"add");
+    setShowAddModal(false);
+    setAddForm({name:"",email:"",phone:"",sessionId:"1on1",time:"4:00 PM",payMethod:"inperson",payStatus:"unpaid"});
+  };
+
+  const toggleBlock=async(date,time)=>{
+    const blocked=[...(localSched.blocked||[])];
+    const idx=blocked.findIndex(b=>b.date===date&&b.time===time);
+    let newSched;
+    if(idx>=0){ blocked.splice(idx,1); newSched={...localSched,blocked}; }
+    else { newSched={...localSched,blocked:[...blocked,{date,time}]}; }
+    setLocalSched(newSched);
+    await saveSchedule(newSched);
+    onUpdateSchedule(newSched);
+  };
+
+  const saveWeekendAvail=async()=>{
+    await saveSchedule(localSched);
+    onUpdateSchedule(localSched);
+    setShowScheduleModal(false);
+  };
+
+  const allSlots=isWeekend(selDateObj)?WEEKEND_SLOTS:WEEKDAY_SLOTS;
+  const blockedSlots=(localSched?.blocked||[]).filter(b=>b.date===selDate).map(b=>b.time);
+  const bookedSlots=todayBookings.map(b=>b.time);
+
+  const totalRevenue=bookings.filter(b=>b.payStatus==="paid").reduce((s,b)=>s+b.price,0);
+  const pendingPay=bookings.filter(b=>b.status!=="cancelled"&&b.payStatus!=="paid").length;
+
+  return (
+    <div style={{fontFamily:"'DM Sans',sans-serif"}}>
+      {/* Stats */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:20}}>
+        {[
+          {l:"Total Bookings",v:bookings.filter(b=>b.status!=="cancelled").length,c:C.sky},
+          {l:"Confirmed",v:bookings.filter(b=>b.status==="confirmed").length,c:C.green},
+          {l:"Pending Pay",v:pendingPay,c:C.gold},
+          {l:"Revenue",v:`$${totalRevenue}`,c:C.green},
+        ].map(({l,v,c})=>(
+          <div key={l} style={{background:C.navyMid,borderRadius:12,padding:"14px 16px",border:`1px solid ${C.grayL}`,textAlign:"center"}}>
+            <div style={{fontSize:22,fontWeight:900,color:c,fontFamily:"'Barlow Condensed',sans-serif"}}>{v}</div>
+            <div style={{color:C.gray,fontSize:10,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,marginTop:2}}>{l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",gap:6,marginBottom:18,flexWrap:"wrap"}}>
+        {[{id:"calendar",l:"📅 Calendar"},{id:"list",l:"📋 All Bookings"},{id:"schedule",l:"⚙️ Availability"}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",
+            border:`1px solid ${tab===t.id?C.sky:C.grayL}`,background:tab===t.id?C.sky+"22":"transparent",
+            color:tab===t.id?C.sky:C.gray,fontWeight:700,fontSize:13}}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+
+      {/* ── CALENDAR TAB ── */}
+      {tab==="calendar"&&<>
+        {/* Date strip */}
+        <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:10,marginBottom:16}}>
+          {dates.map(d=>{
+            const key=dateKey(d);
+            const cnt=bookings.filter(b=>b.date===key&&b.status!=="cancelled").length;
+            const isSel=selDate===key;
+            return (
+              <div key={key} onClick={()=>setSelDate(key)}
+                style={{flexShrink:0,width:60,background:isSel?C.sky:C.navyMid,borderRadius:10,
+                  padding:"9px 6px",textAlign:"center",cursor:"pointer",
+                  border:`2px solid ${isSel?C.sky:C.grayL}`}}>
+                <div style={{color:isSel?"#fff":C.gray,fontSize:9,fontWeight:700,textTransform:"uppercase"}}>
+                  {DAYS_OF_WEEK[d.getDay()].slice(0,3)}
+                </div>
+                <div style={{color:isSel?"#fff":C.white,fontWeight:800,fontSize:15,margin:"3px 0"}}>{d.getDate()}</div>
+                {cnt>0&&<div style={{background:isSel?"rgba(255,255,255,0.3)":C.sky,borderRadius:50,
+                  width:18,height:18,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"center",
+                  color:"#fff",fontSize:10,fontWeight:800}}>{cnt}</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Day header */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div>
+            <div style={{color:C.white,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif"}}>
+              {fmtDate(selDateObj)}
+            </div>
+            <div style={{color:C.gray,fontSize:12}}>
+              {todayBookings.length} booking{todayBookings.length!==1?"s":""} · {blockedSlots.length} blocked
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn v="teal" onClick={()=>setShowScheduleModal(true)} sx={{padding:"8px 14px",fontSize:12}}>⚙️ Availability</Btn>
+            <Btn v="org" onClick={()=>setShowAddModal(true)} sx={{padding:"8px 14px",fontSize:12}}>+ Add Client</Btn>
+          </div>
+        </div>
+
+        {/* Time slots grid */}
+        <div>
+          {allSlots.map(slot=>{
+            const booking=todayBookings.find(b=>b.time===slot);
+            const isBlocked=blockedSlots.includes(slot);
+            return (
+              <div key={slot} style={{display:"flex",gap:12,alignItems:"stretch",marginBottom:8}}>
+                <div style={{width:70,flexShrink:0,color:C.gold,fontWeight:700,fontSize:12,
+                  fontFamily:"'Barlow Condensed',sans-serif",paddingTop:14}}>{slot}</div>
+                {booking?(
+                  <div style={{flex:1,background:C.navyMid,borderRadius:10,padding:"12px 16px",
+                    border:`1px solid ${booking.payStatus==="paid"?C.green:C.sky}44`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div>
+                        <div style={{color:C.white,fontWeight:700,fontSize:14}}>{booking.clientName}</div>
+                        <div style={{color:C.gray,fontSize:12}}>{booking.sessionLabel} · ${booking.price}</div>
+                        {booking.clientPhone&&<div style={{color:C.gray,fontSize:11,marginTop:2}}>{booking.clientPhone}</div>}
+                      </div>
+                      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                        <select value={booking.payStatus} onChange={e=>{
+                          const updated={...booking,payStatus:e.target.value};
+                          updateBooking(updated); onUpdateBooking(updated,"update");
+                        }} style={{background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:6,
+                          color:booking.payStatus==="paid"?C.green:C.gold,fontSize:11,padding:"4px 8px",outline:"none",cursor:"pointer"}}>
+                          <option value="unpaid">Unpaid</option>
+                          <option value="paid">Paid ✓</option>
+                          <option value="pay_inperson">Pay In Person</option>
+                        </select>
+                        <button onClick={async()=>{
+                          if(!window.confirm(`Cancel ${booking.clientName}'s session?`)) return;
+                          const u={...booking,status:"cancelled"};
+                          await updateBooking(u); onUpdateBooking(u,"update");
+                        }} style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
+                          borderRadius:6,padding:"4px 8px",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
+                      </div>
+                    </div>
+                  </div>
+                ):isBlocked?(
+                  <div style={{flex:1,background:C.red+"11",borderRadius:10,padding:"12px 16px",
+                    border:`1px solid ${C.red}33`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{color:C.red,fontSize:13,fontWeight:600}}>🚫 Blocked</div>
+                    <button onClick={()=>toggleBlock(selDate,slot)}
+                      style={{background:"transparent",border:`1px solid ${C.red}44`,color:C.red,
+                        borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>Unblock</button>
+                  </div>
+                ):(
+                  <div style={{flex:1,background:C.navy,borderRadius:10,padding:"12px 16px",
+                    border:`1px dashed ${C.grayL}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{color:C.grayL,fontSize:13}}>Available</div>
+                    <button onClick={()=>toggleBlock(selDate,slot)}
+                      style={{background:"transparent",border:`1px solid ${C.grayL}`,color:C.gray,
+                        borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>Block</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </>}
+
+      {/* ── ALL BOOKINGS TAB ── */}
+      {tab==="list"&&<>
+        {bookings.length===0?(
+          <div style={{textAlign:"center",padding:"40px 0"}}>
+            <div style={{fontSize:36,marginBottom:12}}>📋</div>
+            <div style={{color:C.white,fontWeight:700,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>No Bookings Yet</div>
+            <div style={{color:C.gray,fontSize:13}}>Bookings will appear here when clients register</div>
+          </div>
+        ):([...bookings].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(b=>(
+          <div key={b.id} style={{background:C.navyMid,borderRadius:12,padding:"14px 16px",marginBottom:10,
+            border:`1px solid ${b.status==="cancelled"?C.red+"44":b.payStatus==="paid"?C.green+"44":C.grayL}`,
+            opacity:b.status==="cancelled"?0.6:1}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{color:C.white,fontWeight:700,fontSize:15}}>{b.clientName}</div>
+                <div style={{color:C.gray,fontSize:12,marginTop:2}}>{b.sessionLabel} · {b.dateLabel} · {b.time}</div>
+                <div style={{color:C.gray,fontSize:11,marginTop:2}}>{b.clientEmail} · {b.clientPhone}</div>
+                <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
+                  <Badge c={b.status==="cancelled"?C.red:C.green}>{b.status}</Badge>
+                  <Badge c={b.payStatus==="paid"?C.green:C.gold}>${b.price} · {b.payStatus}</Badge>
+                  {b.addedByAdmin&&<Badge c={C.sky}>Admin Added</Badge>}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <select value={b.payStatus} onChange={e=>{
+                  const u={...b,payStatus:e.target.value};
+                  updateBooking(u); onUpdateBooking(u,"update");
+                }} style={{background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,
+                  color:C.white,fontSize:12,padding:"7px 10px",outline:"none",cursor:"pointer"}}>
+                  <option value="unpaid">Unpaid</option>
+                  <option value="paid">Paid ✓</option>
+                  <option value="pay_inperson">Pay In Person</option>
+                </select>
+                <button onClick={async()=>{
+                  if(!window.confirm(`Delete ${b.clientName}'s booking?`)) return;
+                  await deleteBooking(b.id); onUpdateBooking(b,"delete");
+                }} style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
+                  borderRadius:8,padding:"7px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}>🗑</button>
+              </div>
+            </div>
+          </div>
+        )))}
+      </>}
+
+      {/* ── AVAILABILITY TAB ── */}
+      {tab==="schedule"&&<>
+        <div style={{color:C.gray,fontSize:13,marginBottom:20,lineHeight:1.6}}>
+          Mon–Fri slots (4pm–8pm) are always available unless blocked on the calendar.
+          Set your Saturday and Sunday availability below.
+        </div>
+        {["Saturday","Sunday"].map(day=>{
+          const slots=localSched?.availability?.[day]||[];
+          return (
+            <div key={day} style={{background:C.navyMid,borderRadius:12,padding:16,marginBottom:14,border:`1px solid ${C.grayL}`}}>
+              <div style={{color:C.white,fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:14}}>{day}</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                {WEEKEND_SLOTS.map(s=>{
+                  const on=slots.includes(s);
+                  return (
+                    <button key={s} onClick={()=>{
+                      const cur=localSched?.availability||{};
+                      const daySlots=cur[day]||[];
+                      const newSlots=on?daySlots.filter(x=>x!==s):[...daySlots,s].sort((a,b)=>toMins(a)-toMins(b));
+                      setLocalSched(p=>({...p,availability:{...cur,[day]:newSlots}}));
+                    }} style={{padding:"9px 6px",borderRadius:8,cursor:"pointer",textAlign:"center",
+                      border:`2px solid ${on?C.sky:C.grayL}`,background:on?C.sky+"22":C.navy,
+                      color:on?C.sky:C.gray,fontWeight:700,fontSize:12}}>
+                      {on?"✓ ":""}{s}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+        <Btn v="pri" onClick={async()=>{await saveSchedule(localSched);onUpdateSchedule(localSched);}} sx={{width:"100%",padding:"12px 0",fontSize:14}}>
+          Save Weekend Availability
+        </Btn>
+      </>}
+
+      {/* Add Client Modal */}
+      {showAddModal&&(
+        <div style={{position:"fixed",inset:0,background:"#000a",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:C.navyMid,borderRadius:18,padding:28,width:420,maxWidth:"100%",border:`1px solid ${C.sky}55`,maxHeight:"85vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif"}}>Add Client to Calendar</div>
+              <button onClick={()=>setShowAddModal(false)} style={{background:"transparent",border:"none",color:C.gray,cursor:"pointer",fontSize:20}}>×</button>
+            </div>
+            <div style={{color:C.sky,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:14}}>
+              {fmtDate(selDateObj)}
+            </div>
+            {[{k:"name",l:"Client Name *",p:"Full name",t:"text"},{k:"email",l:"Email",p:"email@example.com",t:"email"},{k:"phone",l:"Phone",p:"(555) 555-5555",t:"tel"}].map(({k,l,p,t})=>(
+              <div key={k} style={{marginBottom:12}}>
+                <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>{l}</div>
+                <input value={addForm[k]||""} onChange={e=>upd(k,e.target.value)} placeholder={p} type={t}
+                  style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:14,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+              </div>
+            ))}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+              <div>
+                <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Session</div>
+                <select value={addForm.sessionId} onChange={e=>upd("sessionId",e.target.value)}
+                  style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none"}}>
+                  {SESSIONS.map(s=><option key={s.id} value={s.id}>{s.label} (${s.price})</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Time</div>
+                <select value={addForm.time} onChange={e=>upd("time",e.target.value)}
+                  style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none"}}>
+                  {allSlots.map(s=><option key={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
+              <div>
+                <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Payment</div>
+                <select value={addForm.payMethod} onChange={e=>upd("payMethod",e.target.value)}
+                  style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none"}}>
+                  <option value="inperson">In Person</option>
+                  <option value="online">Online</option>
+                </select>
+              </div>
+              <div>
+                <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Pay Status</div>
+                <select value={addForm.payStatus} onChange={e=>upd("payStatus",e.target.value)}
+                  style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none"}}>
+                  <option value="unpaid">Unpaid</option>
+                  <option value="paid">Paid ✓</option>
+                  <option value="pay_inperson">Pay In Person</option>
+                </select>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <Btn v="gh" onClick={()=>setShowAddModal(false)} sx={{flex:1}}>Cancel</Btn>
+              <Btn v="pri" onClick={addManual} dis={!addForm.name?.trim()} sx={{flex:2}}>Add to Calendar</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const [data,setData]           = useState({ tournaments: [] });
+  const [bookings,setBookings]   = useState([]);
+  const [coachSchedule,setCoachSchedule] = useState({availability:{},blocked:[]});
   const [loading,setLoading]     = useState(true);
   const [adminAuth,setAdminAuth] = useState(()=>sessionStorage.getItem(ADMIN_SESSION_KEY)==="1");
   const [showAdminLogin,setShowAdminLogin] = useState(false);
@@ -3793,6 +4544,7 @@ export default function App() {
   const [showRegister,setShowRegister]     = useState(false);
   const [showTeamList,setShowTeamList]     = useState(false);
   const [show3v3,setShow3v3]               = useState(false);
+  const [showBooking,setShowBooking]       = useState(false);
   const [logoUrl,setLogoUrl]               = useState("https://raw.githubusercontent.com/nbrown2423/Shoebox-sports/main/logo.jpg");
 
   // Load fonts
@@ -3804,7 +4556,12 @@ export default function App() {
 
   // Load data from Supabase on mount
   useEffect(()=>{
-    loadFromDB().then(d=>{ setData(d); setLoading(false); });
+    Promise.all([loadFromDB(), loadBookings(), loadSchedule()]).then(([d,b,s])=>{
+      setData(d);
+      setBookings(b.map(r=>r.data||r));
+      setCoachSchedule(s);
+      setLoading(false);
+    });
   },[]);
 
   const onScore=(gId,h,a)=>setData(d=>{
@@ -3860,7 +4617,18 @@ export default function App() {
     setData(d=>({...d,tournaments:d.tournaments.filter(x=>x.id!==tId)}));
   };
 
-  const onSubmitRegistration=async(reg)=>{
+  const onSubmitBooking=async(b)=>{
+    await saveBooking(b);
+    setBookings(prev=>[...prev,b]);
+  };
+
+  const onUpdateBooking=(b,action)=>{
+    if(action==="add") setBookings(prev=>[...prev,b]);
+    else if(action==="update") setBookings(prev=>prev.map(x=>x.id===b.id?b:x));
+    else if(action==="delete") setBookings(prev=>prev.filter(x=>x.id!==b.id));
+  };
+
+  const onUpdateSchedule=(s)=>setCoachSchedule(s);
     await saveRegistration(reg);
     setData(d=>({...d,tournaments:d.tournaments.map(t=>{
       if(t.id!==reg.tournamentId) return t;
@@ -3919,7 +4687,9 @@ export default function App() {
         <Admin data={data} onScore={onScore} onUpdateGames={onUpdateGames} onAdd={onAdd}
           onEditTournament={onEditTournament} onDeleteTournament={onDeleteTournament}
           logoUrl={logoUrl} onSaveLogoUrl={setLogoUrl}
-          onGoHome={()=>{ setSelectedTId(null); }}/>
+          onGoHome={()=>{ setSelectedTId(null); }}
+          bookings={bookings} coachSchedule={coachSchedule}
+          onUpdateBooking={onUpdateBooking} onUpdateSchedule={onUpdateSchedule}/>
         <button onClick={()=>{setAdminAuth(false);sessionStorage.removeItem(ADMIN_SESSION_KEY);}}
           style={{position:"fixed",bottom:18,right:18,zIndex:999,
             background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:50,
@@ -3931,6 +4701,14 @@ export default function App() {
       </div>
     );
   }
+
+  // Public: booking form
+  if (showBooking) return (
+    <div style={{background:C.navy,minHeight:"100vh"}}>
+      <PublicHeader onBack={()=>setShowBooking(false)}/>
+      <BookingForm bookings={bookings} schedule={coachSchedule} onSubmit={onSubmitBooking} onBack={()=>setShowBooking(false)} logoUrl={logoUrl}/>
+    </div>
+  );
 
   // Public: 3v3 registration
   if (show3v3) return (
@@ -3975,7 +4753,7 @@ export default function App() {
   // Public: home page
   return (
     <div style={{background:C.navy,minHeight:"100vh"}}>
-      <PublicHome data={data} onSelectTournament={id=>setSelectedTId(id)} logoUrl={logoUrl} onRegister={()=>setShowRegister(true)} onRegister3v3={()=>setShow3v3(true)}/>
+      <PublicHome data={data} onSelectTournament={id=>setSelectedTId(id)} logoUrl={logoUrl} onRegister={()=>setShowRegister(true)} onRegister3v3={()=>setShow3v3(true)} onBooking={()=>setShowBooking(true)}/>
       <div style={{textAlign:"center",paddingBottom:20}}>
         <button onClick={()=>setShowAdminLogin(true)}
           style={{background:"transparent",border:"none",color:C.grayL,
