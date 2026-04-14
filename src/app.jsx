@@ -2349,6 +2349,33 @@ async function deleteRegistration(id) {
 // ─── PUBLIC REGISTRATION FORM ────────────────────────────────────────────────
 const PAYMENT_LINK = "https://theshoeboxsports.cloveronline.com/";
 const PAYMENT_LABEL = "theshoeboxsports.cloveronline.com";
+// ─── EMAILJS CONFIG ───────────────────────────────────────────────────────────
+const EJS = {
+  serviceId:      "service_5zrpxvj",
+  adminTemplate:  "template_yykska3",   // → Info@theshoeboxsports.com
+  coachTemplate:  "template_xzsta4c",   // → coach's email
+  publicKey:      "iFaGCl_1cFBylbGdi",
+};
+
+async function sendEmail(templateId, params) {
+  try {
+    const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        service_id:  EJS.serviceId,
+        template_id: templateId,
+        user_id:     EJS.publicKey,
+        template_params: params,
+      }),
+    });
+    return res.ok;
+  } catch(e) {
+    console.error("EmailJS error:", e);
+    return false;
+  }
+}
+
 function RegistrationForm({data, onSubmit, onBack}) {
   const [form,setForm]=useState({
     tournamentId:"", coachName:"", phone:"", email:"", agreed:false
@@ -2414,7 +2441,42 @@ function RegistrationForm({data, onSubmit, onBack}) {
       paymentStatus:"unpaid",
       submittedAt:now,
     }));
+
+    // Save all registrations to DB
     for(const reg of regs) await onSubmit(reg);
+
+    // Build teams list string for emails
+    const teamsList = regs.map((r,i)=>
+      `${i+1}. ${r.teamName} — ${dlabel(r.gradeId,r.gender)}`
+    ).join("\n");
+
+    const tournamentDates = tDates(selTournament).map(fmtD).join(" → ");
+
+    // Send admin notification email
+    await sendEmail(EJS.adminTemplate, {
+      tournament_name:  selTournament.name,
+      tournament_dates: tournamentDates,
+      location:         selTournament.location,
+      coach_name:       form.coachName.trim(),
+      coach_email:      form.email.trim(),
+      coach_phone:      form.phone.trim(),
+      teams_list:       teamsList,
+      team_count:       String(regs.length),
+      submitted_at:     new Date(now).toLocaleString(),
+    });
+
+    // Send coach confirmation email
+    await sendEmail(EJS.coachTemplate, {
+      coach_name:       form.coachName.trim(),
+      coach_email:      form.email.trim(),
+      tournament_name:  selTournament.name,
+      tournament_dates: tournamentDates,
+      location:         selTournament.location,
+      teams_list:       teamsList,
+      team_count:       String(regs.length),
+      payment_link:     PAYMENT_LINK,
+    });
+
     setSubmittedTeams(regs);
     setSubmitting(false);
     setSubmitted(true);
