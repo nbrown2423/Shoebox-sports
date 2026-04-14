@@ -2222,8 +2222,8 @@ async function deleteRegistration(id) {
 }
 
 // ─── PUBLIC REGISTRATION FORM ────────────────────────────────────────────────
-const PAYPAL_USER = "Nbrown2423";
-const PAYPAL_LINK = `https://www.paypal.com/paypalme/${PAYPAL_USER}`;
+const PAYMENT_LINK = "https://theshoeboxsports.cloveronline.com/";
+const PAYMENT_LABEL = "theshoeboxsports.cloveronline.com";
 function RegistrationForm({data, onSubmit, onBack}) {
   const [form,setForm]=useState({
     tournamentId:"", coachName:"", phone:"", email:"", agreed:false
@@ -2329,22 +2329,22 @@ function RegistrationForm({data, onSubmit, onBack}) {
           ))}
         </div>
 
-        {/* PayPal payment */}
+        {/* Clover payment */}
         <div style={{background:C.navyMid,borderRadius:16,padding:24,marginBottom:20,border:`1px solid ${C.gold}44`}}>
           <div style={{color:C.gold,fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
             💰 Complete Your Payment
           </div>
           <div style={{color:C.gray,fontSize:13,marginBottom:16,lineHeight:1.6}}>
-            Send your registration fee{submittedTeams.length>1?" for each team":""} via PayPal.
+            Send your registration fee{submittedTeams.length>1?" for each team":""} through our secure Clover payment page.
             Include <strong style={{color:C.white}}>each team name</strong> and the <strong style={{color:C.white}}>tournament name</strong> in the note.
           </div>
-          <a href={PAYPAL_LINK} target="_blank" rel="noopener noreferrer"
-            style={{display:"inline-block",background:"#0070BA",color:"#fff",fontWeight:800,fontSize:15,
+          <a href={PAYMENT_LINK} target="_blank" rel="noopener noreferrer"
+            style={{display:"inline-block",background:`linear-gradient(135deg,#00A651,#007A3D)`,color:"#fff",fontWeight:800,fontSize:15,
               padding:"13px 28px",borderRadius:10,textDecoration:"none",
               fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.06em",textTransform:"uppercase"}}>
-            Pay via PayPal →
+            Pay Now →
           </a>
-          <div style={{color:C.gray,fontSize:11,marginTop:10}}>paypal.me/{PAYPAL_USER}</div>
+          <div style={{color:C.gray,fontSize:11,marginTop:10}}>{PAYMENT_LABEL}</div>
         </div>
 
         <Btn v="pri" onClick={onBack} sx={{padding:"11px 24px"}}>← Back to Tournaments</Btn>
@@ -2480,11 +2480,11 @@ function RegistrationForm({data, onSubmit, onBack}) {
           </button>
         </div>
 
-        {/* PayPal info */}
+        {/* Payment info */}
         <div style={{background:C.gold+"18",border:`1px solid ${C.gold}44`,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
           <div style={{color:C.gold,fontWeight:800,fontSize:13,marginBottom:4}}>💰 Payment Info</div>
           <div style={{color:C.gray,fontSize:13,lineHeight:1.6}}>
-            After submitting, pay via PayPal at <strong style={{color:C.white}}>paypal.me/{PAYPAL_USER}</strong>.
+            After submitting, complete payment through our secure Clover page at <strong style={{color:C.white}}>{PAYMENT_LABEL}</strong>.
             Include each team name and tournament name in the note. Registration is not confirmed until payment is received.
           </div>
         </div>
