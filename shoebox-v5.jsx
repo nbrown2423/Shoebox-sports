@@ -2461,8 +2461,12 @@ function PublicHome({data, onSelectTournament, logoUrl, onRegister, onRegister3v
             display:"flex",justifyContent:"space-between",alignItems:"center",
             boxShadow:"0 4px 20px #E8770A44"}}>
           <div>
-            <div style={{color:"#fff",fontWeight:900,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif"}}>Register Your Team</div>
-            <div style={{color:"rgba(255,255,255,0.8)",fontSize:13,marginTop:2}}>Sign up for an upcoming tournament</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+              <div style={{background:"rgba(255,255,255,0.25)",borderRadius:6,padding:"2px 8px",
+                color:"#fff",fontWeight:900,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>5v5</div>
+              <div style={{color:"#fff",fontWeight:900,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif"}}>Register Your Team</div>
+            </div>
+            <div style={{color:"rgba(255,255,255,0.8)",fontSize:13}}>Sign up for an upcoming 5v5 tournament</div>
           </div>
           <div style={{color:"#fff",fontSize:24}}>📝</div>
         </div>
