@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // ─── COLORS & CONSTANTS ───────────────────────────────────────────────────────
 const C = {
@@ -360,6 +360,8 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
     setDrag(null); setOver(null);
   };
 
+  const unplace = id => setGames(prev=>prev.map(g=>g.id===id?{...g,dayIdx:null,court:null,time:null}:g));
+
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [expandedDivs, setExpandedDivs] = useState(()=>{
     const init={};
@@ -374,11 +376,18 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
   };
 
   // Drop onto sidebar = unplace the game
+  // We use a ref to track drag id because onDragEnd fires before onDrop in some browsers
+  const dragRef = useRef(null);
+
   const dropOnSidebar = (e) => {
     e.preventDefault();
-    if (!drag) return;
-    unplace(drag);
-    setDrag(null); setOver(null);
+    e.stopPropagation();
+    const id = dragRef.current || drag;
+    if (!id) return;
+    unplace(id);
+    dragRef.current = null;
+    setDrag(null);
+    setOver(null);
   };
 
   const dayGames = games.filter(g=>g.dayIdx===dayIdx&&(fDiv==="all"||g.divisionId===fDiv));
@@ -395,8 +404,20 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
     const isDrag = drag===game.id;
     return (
       <div key={game.id} draggable
-        onDragStart={e=>{setDrag(game.id);e.dataTransfer.effectAllowed="move";}}
-        onDragEnd={()=>{setDrag(null);setOver(null);}}
+        onDragStart={e=>{
+          dragRef.current=game.id;
+          setDrag(game.id);
+          e.dataTransfer.effectAllowed="move";
+          e.dataTransfer.setData("text/plain", String(game.id));
+        }}
+        onDragEnd={e=>{
+          // Small delay so onDrop fires first
+          setTimeout(()=>{
+            dragRef.current=null;
+            setDrag(null);
+            setOver(null);
+          }, 50);
+        }}
         style={{background:isDrag?"rgba(42,158,216,0.2)":C.navyMid, borderRadius:10,
           padding:inGrid?"9px 11px":"10px 12px",cursor:"grab",userSelect:"none",
           border:`2px solid ${hasC?C.red:hasV?C.gold:col+"66"}`,
@@ -496,7 +517,7 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
 
         {/* ── Unscheduled sidebar — also a drop target to unschedule ── */}
         <div
-          onDragOver={e=>{ e.preventDefault(); }}
+          onDragOver={e=>{ e.preventDefault(); e.dataTransfer.dropEffect="move"; }}
           onDrop={dropOnSidebar}
           style={{width:240,background:drag?C.navy+"ee":C.navy,
             borderRight:`1px solid ${C.grayL}`,
