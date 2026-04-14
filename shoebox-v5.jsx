@@ -1618,7 +1618,7 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
   const [showEdit,setShowEdit]=useState(false);
   const [showDeleteConfirm,setShowDeleteConfirm]=useState(false);
   const t=data.tournaments.find(x=>x.id===aTId)||data.tournaments[0];
-  const tabs=[{id:"schedule",icon:"📋",l:"Schedule"},{id:"standings",icon:"📊",l:"Standings"},{id:"bracket",icon:"🏆",l:"Bracket"},{id:"courts",icon:"🏟",l:"Courts"},{id:"settings",icon:"⚙️",l:"Settings"}];
+  const tabs=[{id:"schedule",icon:"📋",l:"Schedule"},{id:"standings",icon:"📊",l:"Standings"},{id:"bracket",icon:"🏆",l:"Bracket"},{id:"courts",icon:"🏟",l:"Courts"},{id:"registrations",icon:"📝",l:"Registrations"},{id:"settings",icon:"⚙️",l:"Settings"}];
   return (
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:`linear-gradient(160deg,${C.navy},${C.navyMid})`}}>
       {/* Top Nav */}
@@ -1696,6 +1696,8 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
       <div style={{padding:22,maxWidth:1200,margin:"0 auto"}}>
         {tab==="settings"
           ? <AdminSettings logoUrl={logoUrl} onSaveLogoUrl={onSaveLogoUrl}/>
+          : tab==="registrations"&&t
+          ? <AdminRegistrations tournament={t} onUpdateTournament={onEditTournament}/>
           : t?<>
           {tab==="schedule"&&<AdminSchedule tournament={t} onScore={onScore} onUpdateGames={g=>onUpdateGames(t.id,g)}/>}
           {tab==="standings"&&<AdminStandings tournament={t}/>}
@@ -1777,7 +1779,7 @@ function AdminLogin({onSuccess}) {
 }
 
 // ─── PUBLIC HOME PAGE ─────────────────────────────────────────────────────────
-function PublicHome({data, onSelectTournament, logoUrl}) {
+function PublicHome({data, onSelectTournament, logoUrl, onRegister}) {
   const active   = data.tournaments.filter(t=>t.status==="active");
   const upcoming = data.tournaments.filter(t=>t.status==="upcoming");
   const past     = data.tournaments.filter(t=>t.status==="complete");
@@ -1852,6 +1854,18 @@ function PublicHome({data, onSelectTournament, logoUrl}) {
       </div>
 
       <div style={{padding:"20px 16px"}}>
+        {/* Register CTA */}
+        <div onClick={onRegister}
+          style={{background:`linear-gradient(135deg,#E8770A,#F59B30)`,borderRadius:14,
+            padding:"16px 20px",marginBottom:20,cursor:"pointer",
+            display:"flex",justifyContent:"space-between",alignItems:"center",
+            boxShadow:"0 4px 20px #E8770A44"}}>
+          <div>
+            <div style={{color:"#fff",fontWeight:900,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif"}}>Register Your Team</div>
+            <div style={{color:"rgba(255,255,255,0.8)",fontSize:13,marginTop:2}}>Sign up for an upcoming tournament</div>
+          </div>
+          <div style={{color:"#fff",fontSize:24}}>📝</div>
+        </div>
         {/* Live tournaments */}
         {active.length>0&&<>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
@@ -1902,7 +1916,7 @@ function PublicHome({data, onSelectTournament, logoUrl}) {
 }
 
 // ─── PUBLIC TOURNAMENT DETAIL ─────────────────────────────────────────────────
-function PublicTournament({tournament, onBack}) {
+function PublicTournament({tournament, onBack, onRegister, onViewTeams}) {
   const [aDiv,setADiv]=useState(tournament.divisions[0]?.id);
   const [search,setSearch]=useState("");
   const [selTeam,setSelTeam]=useState(null);
@@ -1932,6 +1946,13 @@ function PublicTournament({tournament, onBack}) {
             {tournament.status==="active"?"● Live":tournament.status==="upcoming"?"Upcoming":"Complete"}
           </Badge>
         </div>
+        {/* Register + View Teams buttons */}
+        {(tournament.status==="upcoming"||tournament.status==="active")&&(
+          <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+            <Btn v="org" onClick={onRegister} sx={{flex:1,padding:"10px 0",fontSize:13}}>📝 Register Your Team</Btn>
+            <Btn v="teal" onClick={onViewTeams} sx={{flex:1,padding:"10px 0",fontSize:13}}>👀 View Registered Teams</Btn>
+          </div>
+        )}
         {/* Tabs */}
         <div style={{display:"flex",gap:2}}>
           {tabs.map(t=>(
@@ -2205,6 +2226,446 @@ async function updateTournamentInDB(tournament) {
   });
 }
 
+async function loadRegistrations() {
+  const rows = await sbFetch("/registrations?select=*&order=created_at.asc");
+  return rows || [];
+}
+
+async function saveRegistration(reg) {
+  await sbFetch("/registrations", {
+    method: "POST",
+    headers: { "Prefer": "resolution=merge-duplicates" },
+    body: JSON.stringify({ id: reg.id, data: reg }),
+  });
+}
+
+async function updateRegistration(reg) {
+  await sbFetch(`/registrations?id=eq.${reg.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ data: reg }),
+  });
+}
+
+async function deleteRegistration(id) {
+  await sbFetch(`/registrations?id=eq.${id}`, { method: "DELETE" });
+}
+
+// ─── PUBLIC REGISTRATION FORM ────────────────────────────────────────────────
+const PAYPAL = "Nbrown2423@gmail.com";
+function RegistrationForm({data, onSubmit, onBack}) {
+  const [form,setForm]=useState({tournamentId:"",teamName:"",coachName:"",phone:"",email:"",gradeId:"",gender:"Boys",agreed:false});
+  const [submitted,setSubmitted]=useState(false);
+  const [submitting,setSubmitting]=useState(false);
+  const [errors,setErrors]=useState({});
+  const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const selTournament = data.tournaments.find(t=>t.id===parseInt(form.tournamentId)||t.id===form.tournamentId);
+
+  // Get available divisions for selected tournament (not at capacity)
+  const availableDivs = selTournament ? selTournament.divisions.filter(d=>{
+    const cap = d.capacity||8;
+    const regs = (selTournament.registrations||[]).filter(r=>r.gradeId===d.gradeId&&r.gender===d.gender&&r.status!=="rejected");
+    return regs.length < cap;
+  }) : [];
+
+  const fullDivs = selTournament ? selTournament.divisions.filter(d=>{
+    const cap = d.capacity||8;
+    const regs = (selTournament.registrations||[]).filter(r=>r.gradeId===d.gradeId&&r.gender===d.gender&&r.status!=="rejected");
+    return regs.length >= cap;
+  }) : [];
+
+  const validate=()=>{
+    const e={};
+    if(!form.tournamentId) e.tournamentId="Please select a tournament";
+    if(!form.teamName.trim()) e.teamName="Team name is required";
+    if(!form.coachName.trim()) e.coachName="Coach name is required";
+    if(!form.phone.trim()) e.phone="Phone number is required";
+    if(!form.email.trim()||!form.email.includes("@")) e.email="Valid email is required";
+    if(!form.gradeId) e.gradeId="Please select a grade division";
+    if(!form.agreed) e.agreed="You must agree to the terms";
+    setErrors(e);
+    return Object.keys(e).length===0;
+  };
+
+  const handleSubmit=async()=>{
+    if(!validate()) return;
+    setSubmitting(true);
+    const reg={
+      id:Date.now(),
+      tournamentId:selTournament.id,
+      tournamentName:selTournament.name,
+      teamName:form.teamName.trim(),
+      coachName:form.coachName.trim(),
+      phone:form.phone.trim(),
+      email:form.email.trim(),
+      gradeId:form.gradeId,
+      gender:form.gender,
+      status:"pending",
+      paymentStatus:"unpaid",
+      submittedAt:new Date().toISOString(),
+    };
+    await onSubmit(reg);
+    setSubmitting(false);
+    setSubmitted(true);
+  };
+
+  const FErr=({k})=>errors[k]?<div style={{color:C.red,fontSize:11,marginTop:4,fontWeight:600}}>{errors[k]}</div>:null;
+
+  if(submitted) return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
+      <div style={{padding:24,textAlign:"center",paddingTop:60}}>
+        <div style={{fontSize:48,marginBottom:16}}>🎉</div>
+        <div style={{color:C.green,fontWeight:900,fontSize:26,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>Registration Submitted!</div>
+        <div style={{color:C.white,fontSize:16,fontWeight:600,marginBottom:6}}>{form.teamName}</div>
+        <div style={{color:C.gray,fontSize:14,marginBottom:28,lineHeight:1.6}}>
+          Your registration for <span style={{color:C.white}}>{selTournament?.name}</span> has been received.
+          You'll be contacted at <span style={{color:C.sky}}>{form.email}</span> once approved.
+        </div>
+
+        {/* PayPal payment prompt */}
+        <div style={{background:C.navyMid,borderRadius:16,padding:24,marginBottom:24,border:`1px solid ${C.gold}44`}}>
+          <div style={{color:C.gold,fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
+            💰 Complete Your Payment
+          </div>
+          <div style={{color:C.gray,fontSize:13,marginBottom:16,lineHeight:1.6}}>
+            To secure your spot, please send your registration fee via PayPal. Include your <strong style={{color:C.white}}>team name</strong> and <strong style={{color:C.white}}>tournament name</strong> in the note.
+          </div>
+          <a href={`https://www.paypal.com/paypalme/${PAYPAL.split("@")[0]}`} target="_blank" rel="noopener noreferrer"
+            style={{display:"inline-block",background:"#0070BA",color:"#fff",fontWeight:800,fontSize:15,
+              padding:"13px 28px",borderRadius:10,textDecoration:"none",fontFamily:"'Barlow Condensed',sans-serif",
+              letterSpacing:"0.06em",textTransform:"uppercase"}}>
+            Pay via PayPal →
+          </a>
+          <div style={{color:C.gray,fontSize:11,marginTop:10}}>PayPal: {PAYPAL}</div>
+        </div>
+
+        <Btn v="pri" onClick={onBack} sx={{padding:"11px 24px"}}>← Back to Tournaments</Btn>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
+      <div style={{background:`linear-gradient(160deg,${C.navyLight},${C.navyMid})`,
+        padding:"24px 20px",borderBottom:`1px solid ${C.grayL}`}}>
+        <div style={{color:C.sky,fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:4}}>Shoebox Sports</div>
+        <div style={{color:C.white,fontWeight:900,fontSize:26,fontFamily:"'Barlow Condensed',sans-serif"}}>Team Registration</div>
+        <div style={{color:C.gray,fontSize:13,marginTop:4}}>Register your team for an upcoming tournament</div>
+      </div>
+
+      <div style={{padding:20}}>
+        {/* Tournament select */}
+        <div style={{marginBottom:16}}>
+          <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Tournament *</div>
+          <select value={form.tournamentId} onChange={e=>{upd("tournamentId",e.target.value);upd("gradeId","");}}
+            style={{width:"100%",background:C.navyMid,border:`1px solid ${errors.tournamentId?C.red:C.grayL}`,borderRadius:8,
+              color:form.tournamentId?C.white:C.gray,fontSize:14,padding:"11px 14px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}>
+            <option value="">Select a tournament...</option>
+            {data.tournaments.filter(t=>t.status==="upcoming"||t.status==="active").map(t=>(
+              <option key={t.id} value={t.id}>{t.name} — {tDates(t).map(fmtD).join(" → ")}</option>
+            ))}
+          </select>
+          <FErr k="tournamentId"/>
+        </div>
+
+        {/* Division select */}
+        {selTournament&&<div style={{marginBottom:16}}>
+          <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Grade Division *</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:8}}>
+            <select value={form.gradeId} onChange={e=>upd("gradeId",e.target.value)}
+              style={{background:C.navyMid,border:`1px solid ${errors.gradeId?C.red:C.grayL}`,borderRadius:8,
+                color:form.gradeId?C.white:C.gray,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
+              <option value="">Select grade...</option>
+              {[...new Set(selTournament.divisions.map(d=>d.gradeId))].map(g=>{
+                const isFull=selTournament.divisions.filter(d=>d.gradeId===g&&d.gender===form.gender).every(d=>{
+                  const cap=d.capacity||8;
+                  const regs=(selTournament.registrations||[]).filter(r=>r.gradeId===d.gradeId&&r.gender===d.gender&&r.status!=="rejected");
+                  return regs.length>=cap;
+                });
+                return <option key={g} value={g} disabled={isFull}>{GDL[g]||g}{isFull?" (FULL)":""}</option>;
+              })}
+            </select>
+            <select value={form.gender} onChange={e=>upd("gender",e.target.value)}
+              style={{background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,
+                color:C.white,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
+              <option>Boys</option><option>Girls</option>
+            </select>
+          </div>
+          {fullDivs.length>0&&<div style={{background:C.red+"18",border:`1px solid ${C.red}44`,borderRadius:8,padding:"8px 12px",color:C.red,fontSize:12}}>
+            ⚠ Full divisions: {fullDivs.map(d=>dshort(d.gradeId,d.gender)).join(", ")}
+          </div>}
+          <FErr k="gradeId"/>
+        </div>}
+
+        {/* Team info */}
+        {[{k:"teamName",l:"Team Name *",p:"e.g. Detroit Ballers"},{k:"coachName",l:"Coach Name *",p:"Full name"},{k:"phone",l:"Phone Number *",p:"(555) 555-5555"},{k:"email",l:"Email Address *",p:"coach@email.com"}].map(({k,l,p})=>(
+          <div key={k} style={{marginBottom:16}}>
+            <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>{l}</div>
+            <input value={form[k]} onChange={e=>upd(k,e.target.value)} placeholder={p}
+              type={k==="email"?"email":k==="phone"?"tel":"text"}
+              style={{width:"100%",background:C.navyMid,border:`1px solid ${errors[k]?C.red:C.grayL}`,borderRadius:8,
+                color:C.white,fontSize:14,padding:"11px 14px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+            <FErr k={k}/>
+          </div>
+        ))}
+
+        {/* PayPal info */}
+        <div style={{background:C.gold+"18",border:`1px solid ${C.gold}44`,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
+          <div style={{color:C.gold,fontWeight:800,fontSize:13,marginBottom:4}}>💰 Payment Info</div>
+          <div style={{color:C.gray,fontSize:13,lineHeight:1.6}}>
+            After submitting, you'll be directed to pay via PayPal to <strong style={{color:C.white}}>{PAYPAL}</strong>.
+            Include your team name and tournament in the payment note. Your registration is not confirmed until payment is received.
+          </div>
+        </div>
+
+        {/* Terms & waiver */}
+        <div style={{background:C.navyMid,borderRadius:10,padding:"14px 16px",marginBottom:16,border:`1px solid ${errors.agreed?C.red:C.grayL}`}}>
+          <div style={{color:C.white,fontWeight:700,fontSize:13,marginBottom:10}}>Terms & Waiver</div>
+          <div style={{color:C.gray,fontSize:12,lineHeight:1.7,marginBottom:14,maxHeight:120,overflowY:"auto"}}>
+            By registering, I acknowledge that: (1) All participants must follow Shoebox Sports rules and code of conduct. (2) Shoebox Sports is not liable for injuries sustained during tournament play. (3) Registration fees are non-refundable unless the tournament is cancelled by Shoebox Sports. (4) Teams may be disqualified for unsportsmanlike conduct. (5) Photo and video of participants may be used for promotional purposes. (6) The coach listed is responsible for all players on the roster. (7) Shoebox Sports reserves the right to refuse registration at their discretion.
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+            <input type="checkbox" checked={form.agreed} onChange={e=>upd("agreed",e.target.checked)}
+              style={{width:18,height:18,cursor:"pointer",accentColor:C.sky}}/>
+            <span style={{color:C.white,fontSize:13,fontWeight:600}}>I agree to the terms and waiver above</span>
+          </label>
+          <FErr k="agreed"/>
+        </div>
+
+        <Btn v="org" onClick={handleSubmit} dis={submitting} sx={{width:"100%",padding:"14px 0",fontSize:15,marginBottom:12}}>
+          {submitting?"Submitting...":"Submit Registration →"}
+        </Btn>
+        <button onClick={onBack} style={{width:"100%",background:"transparent",border:"none",color:C.gray,cursor:"pointer",fontSize:13,padding:"8px 0"}}>← Back to Tournaments</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── PUBLIC TEAM LIST ─────────────────────────────────────────────────────────
+function PublicTeamList({tournament, onBack}) {
+  const dates = tDates(tournament);
+  const regs = (tournament.registrations||[]).filter(r=>r.status==="approved");
+  const byDiv = {};
+  tournament.divisions.forEach(d=>{
+    const key=`${d.gradeId}-${d.gender}`;
+    byDiv[key]={div:d, teams:regs.filter(r=>r.gradeId===d.gradeId&&r.gender===d.gender)};
+  });
+
+  return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
+      <div style={{background:`linear-gradient(160deg,${C.navyLight},${C.navyMid})`,padding:"20px 18px",borderBottom:`1px solid ${C.grayL}`}}>
+        <div style={{color:C.white,fontWeight:900,fontSize:22,fontFamily:"'Barlow Condensed',sans-serif"}}>{tournament.name}</div>
+        <div style={{color:C.gray,fontSize:12,marginTop:4}}>📅 {dates.map(fmtD).join(" → ")} · Registered Teams</div>
+      </div>
+      <div style={{padding:16}}>
+        {Object.entries(byDiv).map(([key,{div,teams}],i)=>{
+          const cap=div.capacity||8;
+          const pendingCount=(tournament.registrations||[]).filter(r=>r.gradeId===div.gradeId&&r.gender===div.gender&&r.status==="pending").length;
+          return (
+            <Card key={key} sx={{marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                <div style={{color:dc(i),fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>{dlabel(div.gradeId,div.gender)}</div>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <Badge c={teams.length>=cap?C.red:C.green}>{teams.length}/{cap} teams</Badge>
+                  {pendingCount>0&&<Badge c={C.gold}>{pendingCount} pending</Badge>}
+                </div>
+              </div>
+              {teams.length===0?(
+                <div style={{color:C.gray,fontSize:13,textAlign:"center",padding:"10px 0"}}>No approved teams yet</div>
+              ):(
+                teams.map((reg,ti)=>(
+                  <div key={reg.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderTop:ti>0?`1px solid ${C.grayL}`:"none"}}>
+                    <div style={{width:28,height:28,borderRadius:"50%",background:dc(i)+"33",border:`1px solid ${dc(i)}66`,
+                      display:"flex",alignItems:"center",justifyContent:"center",color:dc(i),fontWeight:800,fontSize:12,flexShrink:0}}>{ti+1}</div>
+                    <div style={{flex:1}}>
+                      <div style={{color:C.white,fontWeight:700,fontSize:14}}>{reg.teamName}</div>
+                      <div style={{color:C.gray,fontSize:11}}>Coach: {reg.coachName}</div>
+                    </div>
+                    <Badge c={C.green}>Registered</Badge>
+                  </div>
+                ))
+              )}
+              {/* Capacity bar */}
+              <div style={{marginTop:12,background:C.grayL,borderRadius:4,height:4}}>
+                <div style={{width:`${Math.min(teams.length/cap*100,100)}%`,height:"100%",
+                  background:teams.length>=cap?C.red:C.green,borderRadius:4,transition:"width 0.3s"}}/>
+              </div>
+              <div style={{color:C.gray,fontSize:10,marginTop:4}}>
+                {cap-teams.length>0?`${cap-teams.length} spot${cap-teams.length!==1?"s":""} remaining`:"Division Full"}
+              </div>
+            </Card>
+          );
+        })}
+        <button onClick={onBack} style={{width:"100%",background:"transparent",border:"none",color:C.gray,cursor:"pointer",fontSize:13,padding:"12px 0"}}>← Back</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── ADMIN REGISTRATIONS TAB ──────────────────────────────────────────────────
+function AdminRegistrations({tournament, onUpdateTournament}) {
+  const [filterDiv,setFilterDiv]=useState("all");
+  const [filterStatus,setFilterStatus]=useState("all");
+  const [showCapModal,setShowCapModal]=useState(false);
+  const regs = (tournament.registrations||[]).filter(r=>{
+    const divMatch = filterDiv==="all"||(r.gradeId+"-"+r.gender===filterDiv);
+    const statusMatch = filterStatus==="all"||r.status===filterStatus||r.paymentStatus===filterStatus;
+    return divMatch&&statusMatch;
+  });
+
+  const updateReg=(regId,changes)=>{
+    const updated={...tournament,registrations:(tournament.registrations||[]).map(r=>r.id===regId?{...r,...changes}:r)};
+    onUpdateTournament(updated);
+  };
+
+  const deleteReg=(regId)=>{
+    const updated={...tournament,registrations:(tournament.registrations||[]).filter(r=>r.id!==regId)};
+    onUpdateTournament(updated);
+  };
+
+  const approveAndAdd=(reg)=>{
+    // Add to tournament division
+    const div=tournament.divisions.find(d=>d.gradeId===reg.gradeId&&d.gender===reg.gender);
+    if(!div){alert("No matching division found. Please create the division first.");return;}
+    const newTeam={id:Date.now(),name:reg.teamName,pool:"A",wins:0,losses:0,pf:0,pa:0};
+    const updated={...tournament,
+      divisions:tournament.divisions.map(d=>d.id===div.id?{...d,teams:[...d.teams,newTeam]}:d),
+      registrations:(tournament.registrations||[]).map(r=>r.id===reg.id?{...r,status:"approved",teamId:newTeam.id}:r),
+    };
+    onUpdateTournament(updated);
+  };
+
+  const totalRegs=(tournament.registrations||[]).length;
+  const pendingCount=(tournament.registrations||[]).filter(r=>r.status==="pending").length;
+  const paidCount=(tournament.registrations||[]).filter(r=>r.paymentStatus==="paid").length;
+
+  return (
+    <div>
+      {/* Stats row */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:20}}>
+        {[{l:"Total",v:totalRegs,c:C.sky},{l:"Pending",v:pendingCount,c:C.gold},{l:"Paid",v:paidCount,c:C.green},{l:"Unpaid",v:totalRegs-paidCount,c:C.red}].map(({l,v,c})=>(
+          <div key={l} style={{background:C.navyMid,borderRadius:12,padding:"14px 16px",border:`1px solid ${C.grayL}`,textAlign:"center"}}>
+            <div style={{fontSize:28,fontWeight:900,color:c,fontFamily:"'Barlow Condensed',sans-serif"}}>{v}</div>
+            <div style={{color:C.gray,fontSize:11,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700}}>{l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters + capacity button */}
+      <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap",alignItems:"center"}}>
+        <select value={filterDiv} onChange={e=>setFilterDiv(e.target.value)}
+          style={{background:C.navyLight,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"9px 14px",outline:"none",cursor:"pointer"}}>
+          <option value="all">All Divisions</option>
+          {tournament.divisions.map(d=><option key={d.id} value={`${d.gradeId}-${d.gender}`}>{dlabel(d.gradeId,d.gender)}</option>)}
+        </select>
+        <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value)}
+          style={{background:C.navyLight,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"9px 14px",outline:"none",cursor:"pointer"}}>
+          <option value="all">All Statuses</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="paid">Paid</option>
+          <option value="unpaid">Unpaid</option>
+        </select>
+        <Btn v="teal" onClick={()=>setShowCapModal(true)} sx={{marginLeft:"auto",padding:"9px 16px",fontSize:12}}>⚙️ Division Capacity</Btn>
+      </div>
+
+      {/* Registration cards */}
+      {regs.length===0?(
+        <div style={{textAlign:"center",padding:"40px 0"}}>
+          <div style={{fontSize:36,marginBottom:12}}>📋</div>
+          <div style={{color:C.white,fontWeight:700,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>No Registrations Yet</div>
+          <div style={{color:C.gray,fontSize:13}}>Registrations will appear here when teams sign up</div>
+        </div>
+      ):regs.map(reg=>{
+        const div=tournament.divisions.find(d=>d.gradeId===reg.gradeId&&d.gender===reg.gender);
+        const divIdx=tournament.divisions.indexOf(div);
+        const col=divIdx>=0?dc(divIdx):C.gray;
+        const isApproved=reg.status==="approved";
+        const isPaid=reg.paymentStatus==="paid";
+        return (
+          <Card key={reg.id} sx={{marginBottom:12,border:`1px solid ${isApproved?C.green+"44":C.grayL}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{color:C.white,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif"}}>{reg.teamName}</div>
+                <div style={{color:C.gray,fontSize:12,marginTop:2}}>Coach: {reg.coachName} · {reg.phone} · {reg.email}</div>
+                <div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap"}}>
+                  <Badge c={col}>{dlabel(reg.gradeId,reg.gender)}</Badge>
+                  <Badge c={reg.status==="approved"?C.green:reg.status==="rejected"?C.red:C.gold}>{reg.status}</Badge>
+                  <Badge c={isPaid?C.green:C.red}>{reg.paymentStatus}</Badge>
+                </div>
+                <div style={{color:C.gray,fontSize:10,marginTop:6}}>Submitted: {new Date(reg.submittedAt).toLocaleDateString()}</div>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",paddingTop:12,borderTop:`1px solid ${C.grayL}`}}>
+              {/* Status */}
+              <select value={reg.status} onChange={e=>updateReg(reg.id,{status:e.target.value})}
+                style={{background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"7px 10px",outline:"none",cursor:"pointer"}}>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
+              {/* Payment */}
+              <select value={reg.paymentStatus} onChange={e=>updateReg(reg.id,{paymentStatus:e.target.value})}
+                style={{background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"7px 10px",outline:"none",cursor:"pointer"}}>
+                <option value="unpaid">Unpaid</option>
+                <option value="paid">Paid</option>
+              </select>
+              {/* Approve & Add to Division */}
+              {!isApproved&&(
+                <Btn v="ok" onClick={()=>approveAndAdd(reg)} sx={{padding:"7px 14px",fontSize:12}}>
+                  ✓ Approve & Add to Division
+                </Btn>
+              )}
+              {isApproved&&(
+                <div style={{display:"flex",alignItems:"center",gap:6,color:C.green,fontSize:12,fontWeight:700}}>
+                  ✓ Added to {dlabel(reg.gradeId,reg.gender)}
+                </div>
+              )}
+              {/* Delete */}
+              <Btn v="danger" onClick={()=>{if(window.confirm(`Remove ${reg.teamName}?`))deleteReg(reg.id);}} sx={{padding:"7px 12px",fontSize:12,marginLeft:"auto"}}>🗑</Btn>
+            </div>
+          </Card>
+        );
+      })}
+
+      {/* Division Capacity Modal */}
+      {showCapModal&&(
+        <div style={{position:"fixed",inset:0,background:"#000a",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:C.navyMid,borderRadius:18,padding:28,width:420,maxWidth:"100%",border:`1px solid ${C.sky}55`,maxHeight:"80vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif"}}>Division Capacity</div>
+              <button onClick={()=>setShowCapModal(false)} style={{background:"transparent",border:"none",color:C.gray,cursor:"pointer",fontSize:20}}>×</button>
+            </div>
+            <div style={{color:C.gray,fontSize:13,marginBottom:18}}>Set the maximum number of teams allowed per division. Registration will close automatically when full.</div>
+            {tournament.divisions.map((div,i)=>{
+              const cap=div.capacity||8;
+              const regCount=(tournament.registrations||[]).filter(r=>r.gradeId===div.gradeId&&r.gender===div.gender&&r.status!=="rejected").length;
+              return (
+                <div key={div.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:`1px solid ${C.grayL}`}}>
+                  <div style={{flex:1,color:C.white,fontWeight:600,fontSize:13}}>{dlabel(div.gradeId,div.gender)}</div>
+                  <div style={{color:C.gray,fontSize:12}}>{regCount} registered</div>
+                  <select value={cap} onChange={e=>{
+                    const updated={...tournament,divisions:tournament.divisions.map(d=>d.id===div.id?{...d,capacity:parseInt(e.target.value)}:d)};
+                    onUpdateTournament(updated);
+                  }} style={{background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"7px 10px",outline:"none",cursor:"pointer"}}>
+                    {[4,5,6,7,8].map(n=><option key={n} value={n}>{n} teams max</option>)}
+                  </select>
+                </div>
+              );
+            })}
+            <div style={{marginTop:20}}>
+              <Btn v="pri" onClick={()=>setShowCapModal(false)} sx={{width:"100%",padding:"12px 0"}}>Done</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const [data,setData]           = useState({ tournaments: [] });
@@ -2212,6 +2673,8 @@ export default function App() {
   const [adminAuth,setAdminAuth] = useState(false);
   const [showAdminLogin,setShowAdminLogin] = useState(false);
   const [selectedTId,setSelectedTId]       = useState(null);
+  const [showRegister,setShowRegister]     = useState(false);
+  const [showTeamList,setShowTeamList]     = useState(false);
   const [logoUrl,setLogoUrl]               = useState("https://raw.githubusercontent.com/nbrown2423/Shoebox-sports/main/logo.jpg");
 
   // Load fonts
@@ -2274,6 +2737,21 @@ export default function App() {
     setData(d=>({...d,tournaments:d.tournaments.filter(x=>x.id!==tId)}));
   };
 
+  const onSubmitRegistration=async(reg)=>{
+    await saveRegistration(reg);
+    setData(d=>({...d,tournaments:d.tournaments.map(t=>{
+      if(t.id!==reg.tournamentId) return t;
+      const updated={...t,registrations:[...(t.registrations||[]),reg]};
+      updateTournamentInDB(updated);
+      return updated;
+    })}));
+  };
+
+  const onUpdateTournamentRegs=t=>{
+    updateTournamentInDB(t);
+    setData(d=>({...d,tournaments:d.tournaments.map(x=>x.id===t.id?t:x)}));
+  };
+
   // Shared logo header for public pages
   const PublicHeader=({onBack})=>(
     <div style={{background:C.navyMid,borderBottom:`1px solid ${C.grayL}`,padding:"0 18px",
@@ -2331,13 +2809,34 @@ export default function App() {
     );
   }
 
+  // Public: registration form
+  if (showRegister) return (
+    <div style={{background:C.navy,minHeight:"100vh"}}>
+      <PublicHeader onBack={()=>setShowRegister(false)}/>
+      <RegistrationForm data={data} onSubmit={onSubmitRegistration} onBack={()=>setShowRegister(false)}/>
+    </div>
+  );
+
+  // Public: team list
+  if (showTeamList&&selectedTId) {
+    const t=data.tournaments.find(x=>x.id===selectedTId);
+    if(t) return (
+      <div style={{background:C.navy,minHeight:"100vh"}}>
+        <PublicHeader onBack={()=>setShowTeamList(false)}/>
+        <PublicTeamList tournament={t} onBack={()=>setShowTeamList(false)}/>
+      </div>
+    );
+  }
+
   // Public: tournament detail
   if (selectedTId) {
     const t=data.tournaments.find(x=>x.id===selectedTId);
     if (t) return (
       <div style={{background:C.navy,minHeight:"100vh"}}>
         <PublicHeader onBack={()=>setSelectedTId(null)}/>
-        <PublicTournament tournament={t} onBack={()=>setSelectedTId(null)}/>
+        <PublicTournament tournament={t} onBack={()=>setSelectedTId(null)}
+          onRegister={()=>setShowRegister(true)}
+          onViewTeams={()=>setShowTeamList(true)}/>
       </div>
     );
   }
@@ -2345,7 +2844,7 @@ export default function App() {
   // Public: home page
   return (
     <div style={{background:C.navy,minHeight:"100vh"}}>
-      <PublicHome data={data} onSelectTournament={id=>setSelectedTId(id)} logoUrl={logoUrl}/>
+      <PublicHome data={data} onSelectTournament={id=>setSelectedTId(id)} logoUrl={logoUrl} onRegister={()=>setShowRegister(true)}/>
       <div style={{textAlign:"center",paddingBottom:20}}>
         <button onClick={()=>setShowAdminLogin(true)}
           style={{background:"transparent",border:"none",color:C.grayL,
