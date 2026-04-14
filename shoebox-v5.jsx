@@ -2363,15 +2363,21 @@ async function sendEmail(templateId, params) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        service_id:  EJS.serviceId,
-        template_id: templateId,
-        user_id:     EJS.publicKey,
+        service_id:      EJS.serviceId,
+        template_id:     templateId,
+        user_id:         EJS.publicKey,
         template_params: params,
       }),
     });
-    return res.ok;
+    const text = await res.text();
+    if (!res.ok) {
+      console.error(`EmailJS failed [${templateId}]: ${res.status} — ${text}`);
+      return false;
+    }
+    console.log(`EmailJS success [${templateId}]:`, text);
+    return true;
   } catch(e) {
-    console.error("EmailJS error:", e);
+    console.error(`EmailJS exception [${templateId}]:`, e);
     return false;
   }
 }
