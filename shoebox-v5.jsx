@@ -2305,8 +2305,6 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
           ? <AdminRegistrations tournament={t} onUpdateTournament={onEditTournament}/>
           : tab==="teams"&&t
           ? <AdminTeams tournament={t} onUpdateTournament={onEditTournament}/>
-          : tab==="bookings"
-          ? <AdminBookings bookings={bookings} schedule={coachSchedule} onUpdateBooking={onUpdateBooking} onDeleteBooking={async(id)=>{await deleteBooking(id);onUpdateBooking({id},"delete");}} onUpdateSchedule={onUpdateSchedule}/>
           : t?<>
           {tab==="schedule"&&<AdminSchedule tournament={t} onScore={onScore} onUpdateGames={g=>onUpdateGames(t.id,g)}/>}
           {tab==="standings"&&<AdminStandings tournament={t}/>}
@@ -2589,6 +2587,7 @@ function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, 
               </div>
             </div>
             <div style={{display:"flex",gap:8}}>
+              <Btn v="teal" onClick={()=>setTab("groups")} sx={{padding:"8px 14px",fontSize:12}}>👥 + Group</Btn>
               <Btn v="org" onClick={()=>setShowAddModal(true)} sx={{padding:"8px 14px",fontSize:12}}>+ Add Client</Btn>
             </div>
           </div>
@@ -2702,98 +2701,178 @@ function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, 
         {/* ── GROUPS TAB ── */}
         {tab==="groups"&&<>
           <div style={{color:C.gray,fontSize:13,marginBottom:16,lineHeight:1.6}}>
-            Your recurring group training slots. Manage from the Availability settings. Add players directly here.
+            Your recurring group training slots. Add players and create new groups here.
           </div>
+
+          {/* Existing group slots */}
           {(schedule?.groupSlots||[]).length===0?(
-            <div style={{textAlign:"center",padding:"40px 0"}}>
-              <div style={{fontSize:36,marginBottom:12}}>👥</div>
-              <div style={{color:C.white,fontWeight:700,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>No Group Slots Yet</div>
-              <div style={{color:C.gray,fontSize:13}}>Ask your admin to create group slots in the Availability settings</div>
+            <div style={{textAlign:"center",padding:"32px 0"}}>
+              <div style={{fontSize:36,marginBottom:10}}>👥</div>
+              <div style={{color:C.white,fontWeight:700,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:6}}>No Group Slots Yet</div>
+              <div style={{color:C.gray,fontSize:13}}>Create a group using the form below</div>
             </div>
-          ):(schedule?.groupSlots||[]).map((gs,i)=>{
+          ):(schedule?.groupSlots||[]).map((gs,gi)=>{
             const regs=gs.registrants||[];
             const isFull=regs.length>=gs.maxPlayers;
-            const col=dc(i);
+            const isExpired=gs.endDate&&new Date(gs.endDate+"T23:59:59")<new Date();
+            const col=dc(gi);
             return (
-              <div key={gs.id} style={{background:C.navyMid,borderRadius:14,padding:18,marginBottom:14,border:`1px solid ${col}44`}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+              <div key={gs.id} style={{background:C.navyMid,borderRadius:14,padding:18,marginBottom:14,
+                border:`1px solid ${isExpired?C.red+"44":col+"44"}`,opacity:isExpired?0.65:1}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
                   <div>
-                    <div style={{color:col,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif"}}>{gs.name}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      <span style={{color:col,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif"}}>{gs.name}</span>
+                      {isExpired&&<span style={{background:C.red+"22",color:C.red,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>Expired</span>}
+                    </div>
                     <div style={{color:C.gray,fontSize:12,marginTop:3}}>Every {gs.day} · {gs.time} · 1 hour</div>
+                    {gs.endDate&&<div style={{color:isExpired?C.red:C.gold,fontSize:11,fontWeight:600,marginTop:2}}>
+                      {isExpired?"Ended":"Runs until"} {fmtD(gs.endDate)}
+                    </div>}
                   </div>
-                  <Badge c={isFull?C.red:C.green}>{regs.length}/{gs.maxPlayers} players</Badge>
+                  <span style={{background:isFull?C.red+"22":C.green+"22",color:isFull?C.red:C.green,
+                    borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700}}>
+                    {regs.length}/{gs.maxPlayers}
+                  </span>
                 </div>
-
                 {/* Capacity bar */}
                 <div style={{background:C.grayL,borderRadius:4,height:4,marginBottom:12}}>
-                  <div style={{width:`${Math.min(regs.length/gs.maxPlayers*100,100)}%`,height:"100%",
+                  <div style={{width:`${Math.min((regs.length/gs.maxPlayers)*100,100)}%`,height:"100%",
                     background:isFull?C.red:col,borderRadius:4,transition:"width 0.3s"}}/>
                 </div>
-
-                {/* Registrant list */}
-                {regs.length>0&&(
-                  <div style={{marginBottom:12}}>
-                    {regs.map((r,ri)=>(
-                      <div key={ri} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",
-                        borderTop:ri>0?`1px solid ${C.grayL}`:"none"}}>
-                        <div style={{width:26,height:26,borderRadius:"50%",background:col+"33",
-                          display:"flex",alignItems:"center",justifyContent:"center",
-                          color:col,fontWeight:800,fontSize:11,flexShrink:0}}>{ri+1}</div>
-                        <div style={{flex:1}}>
-                          <div style={{color:C.white,fontWeight:600,fontSize:13}}>{r.name}</div>
-                          <div style={{color:C.gray,fontSize:11}}>
-                            {r.phone&&`📞 ${r.phone}`}{r.phone&&r.email?" · ":""}{r.email&&`✉️ ${r.email}`}
-                          </div>
-                        </div>
-                        <button onClick={async()=>{
-                          const newRegs=regs.filter((_,idx)=>idx!==ri);
-                          const newGroupSlots=schedule.groupSlots.map(x=>x.id===gs.id?{...x,registrants:newRegs}:x);
-                          const ns={...schedule,groupSlots:newGroupSlots};
-                          await saveSchedule(ns); onUpdateSchedule(ns);
-                        }} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,fontWeight:700}}>✕</button>
+                {/* Players */}
+                {regs.map((r,ri)=>(
+                  <div key={ri} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",
+                    borderTop:`1px solid ${C.grayL}`}}>
+                    <div style={{width:24,height:24,borderRadius:"50%",background:col+"33",flexShrink:0,
+                      display:"flex",alignItems:"center",justifyContent:"center",color:col,fontWeight:800,fontSize:11}}>{ri+1}</div>
+                    <div style={{flex:1}}>
+                      <div style={{color:C.white,fontWeight:600,fontSize:13}}>{r.name}</div>
+                      <div style={{color:C.gray,fontSize:11}}>
+                        {r.phone&&`📞 ${r.phone}`}{r.phone&&r.email?" · ":""}{r.email&&`✉️ ${r.email}`}
                       </div>
-                    ))}
+                    </div>
+                    <button onClick={async()=>{
+                      const nr=regs.filter((_,idx)=>idx!==ri);
+                      const ng=(schedule.groupSlots||[]).map(x=>x.id===gs.id?{...x,registrants:nr}:x);
+                      const ns={...schedule,groupSlots:ng};
+                      await saveSchedule(ns); onUpdateSchedule(ns);
+                    }} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,fontWeight:700}}>✕</button>
                   </div>
-                )}
-
-                {/* Add player inline */}
-                {!isFull&&(()=>{
-                  const [showAdd,setShowAdd]=useState(false);
-                  const [pForm,setPForm]=useState({name:"",phone:"",email:""});
-                  return showAdd?(
-                    <div style={{background:C.navy,borderRadius:10,padding:12,border:`1px solid ${col}44`}}>
-                      <div style={{color:col,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Add Player</div>
-                      {[{k:"name",l:"Name *",p:"Full name",t:"text"},{k:"phone",l:"Phone",p:"(555) 555-5555",t:"tel"},{k:"email",l:"Email",p:"email@example.com",t:"email"}].map(({k,l,p,t})=>(
-                        <div key={k} style={{marginBottom:8}}>
-                          <input value={pForm[k]} onChange={e=>setPForm(f=>({...f,[k]:e.target.value}))} placeholder={`${l} — ${p}`} type={t}
-                            style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"9px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
-                        </div>
+                ))}
+                {/* Add player */}
+                {!isFull&&!isExpired&&(()=>{
+                  const [showP,setShowP]=useState(false);
+                  const [pf,setPf]=useState({name:"",phone:"",email:""});
+                  return showP?(
+                    <div style={{background:C.navy,borderRadius:10,padding:12,marginTop:10,border:`1px solid ${col}44`}}>
+                      <div style={{color:col,fontSize:11,fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Add Player</div>
+                      {[{k:"name",p:"Full name (required)",t:"text"},{k:"phone",p:"Phone number",t:"tel"},{k:"email",p:"Email address",t:"email"}].map(({k,p,t})=>(
+                        <input key={k} value={pf[k]} onChange={e=>setPf(f=>({...f,[k]:e.target.value}))} placeholder={p} type={t}
+                          style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,
+                            fontSize:13,padding:"9px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit",marginBottom:8}}/>
                       ))}
-                      <div style={{display:"flex",gap:8,marginTop:8}}>
-                        <Btn v="gh" onClick={()=>{setShowAdd(false);setPForm({name:"",phone:"",email:""});}} sx={{flex:1}}>Cancel</Btn>
+                      <div style={{display:"flex",gap:8}}>
+                        <Btn v="gh" onClick={()=>{setShowP(false);setPf({name:"",phone:"",email:""}); }} sx={{flex:1}}>Cancel</Btn>
                         <Btn v="pri" onClick={async()=>{
-                          if(!pForm.name.trim()) return;
-                          const newRegs=[...regs,{name:pForm.name.trim(),phone:pForm.phone.trim(),email:pForm.email.trim()}];
-                          const newGroupSlots=schedule.groupSlots.map(x=>x.id===gs.id?{...x,registrants:newRegs}:x);
-                          const ns={...schedule,groupSlots:newGroupSlots};
+                          if(!pf.name.trim()) return;
+                          const nr=[...regs,{name:pf.name.trim(),phone:pf.phone.trim(),email:pf.email.trim()}];
+                          const ng=(schedule.groupSlots||[]).map(x=>x.id===gs.id?{...x,registrants:nr}:x);
+                          const ns={...schedule,groupSlots:ng};
                           await saveSchedule(ns); onUpdateSchedule(ns);
-                          setShowAdd(false); setPForm({name:"",phone:"",email:""});
-                        }} dis={!pForm.name.trim()} sx={{flex:2}}>Add Player</Btn>
+                          setShowP(false); setPf({name:"",phone:"",email:""});
+                        }} dis={!pf.name.trim()} sx={{flex:2}}>Add Player</Btn>
                       </div>
                     </div>
                   ):(
-                    <button onClick={()=>setShowAdd(true)}
-                      style={{width:"100%",padding:"9px 0",background:"transparent",
-                        border:`1px dashed ${col}55`,borderRadius:8,color:col,cursor:"pointer",
-                        fontWeight:700,fontSize:12}}>
+                    <button onClick={()=>setShowP(true)}
+                      style={{width:"100%",padding:"8px 0",background:"transparent",marginTop:10,
+                        border:`1px dashed ${col}55`,borderRadius:8,color:col,cursor:"pointer",fontWeight:700,fontSize:12}}>
                       + Add Player ({gs.maxPlayers-regs.length} spot{gs.maxPlayers-regs.length!==1?"s":""} left)
                     </button>
                   );
                 })()}
-                {isFull&&<div style={{color:C.red,fontSize:12,fontWeight:700,textAlign:"center",padding:"8px 0"}}>⚠ Group Full</div>}
+                {isFull&&<div style={{color:C.red,fontSize:12,fontWeight:700,textAlign:"center",padding:"8px 0",marginTop:6}}>⚠ Group Full</div>}
               </div>
             );
           })}
+
+          {/* Create new group */}
+          {(()=>{
+            const [showGF,setShowGF]=useState(false);
+            const [gf,setGf]=useState({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});
+            const PRESETS=["HS Boys","HS Girls","MS Boys","MS Girls","Custom..."];
+            const allDays=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+            const allTimes=[...WEEKDAY_SLOTS,...WEEKEND_SLOTS].filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>toMins(a)-toMins(b));
+            if(!showGF) return (
+              <button onClick={()=>setShowGF(true)}
+                style={{width:"100%",padding:"11px 0",background:"transparent",marginTop:4,
+                  border:`2px dashed ${C.sky}55`,borderRadius:10,color:C.sky,cursor:"pointer",
+                  fontWeight:700,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                + Create New Group
+              </button>
+            );
+            return (
+              <div style={{background:C.navyMid,borderRadius:12,padding:16,border:`1px solid ${C.sky}44`,marginTop:8}}>
+                <div style={{color:C.sky,fontWeight:800,fontSize:14,marginBottom:14}}>New Group Slot</div>
+                <div style={{marginBottom:10}}>
+                  <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Group Name</div>
+                  <select value={gf.customName?"Custom...":gf.name}
+                    onChange={e=>{
+                      if(e.target.value==="Custom...") setGf(f=>({...f,customName:true,name:""}));
+                      else setGf(f=>({...f,customName:false,name:e.target.value}));
+                    }}
+                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",marginBottom:gf.customName?8:0}}>
+                    <option value="">Select group...</option>
+                    {PRESETS.map(n=><option key={n}>{n}</option>)}
+                  </select>
+                  {gf.customName&&<input value={gf.name} onChange={e=>setGf(f=>({...f,name:e.target.value}))} placeholder="Type group name..."
+                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+                  <div>
+                    <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Day</div>
+                    <select value={gf.day} onChange={e=>setGf(f=>({...f,day:e.target.value}))}
+                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
+                      {allDays.map(d=><option key={d}>{d}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Time</div>
+                    <select value={gf.time} onChange={e=>setGf(f=>({...f,time:e.target.value}))}
+                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
+                      {allTimes.map(t=><option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Max Players</div>
+                    <select value={gf.maxPlayers} onChange={e=>setGf(f=>({...f,maxPlayers:e.target.value}))}
+                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
+                      {[4,5,6].map(n=><option key={n}>{n}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div style={{marginBottom:14}}>
+                  <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Recurring Until *</div>
+                  <input type="date" value={gf.endDate} onChange={e=>setGf(f=>({...f,endDate:e.target.value}))}
+                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+                  <div style={{color:C.gray,fontSize:11,marginTop:4}}>This group recurs every {gf.day} until this date</div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <Btn v="gh" onClick={()=>{setShowGF(false);setGf({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});}} sx={{flex:1}}>Cancel</Btn>
+                  <Btn v="pri" onClick={async()=>{
+                    if(!gf.name.trim()||!gf.endDate) return;
+                    const newSlot={id:Date.now(),name:gf.name.trim(),day:gf.day,time:gf.time,
+                      maxPlayers:parseInt(gf.maxPlayers),endDate:gf.endDate,registrants:[],createdAt:new Date().toISOString()};
+                    const ng=[...(schedule.groupSlots||[]),newSlot];
+                    const ns={...schedule,groupSlots:ng};
+                    await saveSchedule(ns); onUpdateSchedule(ns);
+                    setShowGF(false); setGf({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});
+                  }} dis={!gf.name.trim()||!gf.endDate} sx={{flex:2}}>✓ Create Group</Btn>
+                </div>
+              </div>
+            );
+          })()}
         </>}
 
       </div>
@@ -4773,7 +4852,7 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
 
       {/* Tabs */}
       <div style={{display:"flex",gap:6,marginBottom:18,flexWrap:"wrap"}}>
-        {[{id:"calendar",l:"📅 Calendar"},{id:"list",l:"📋 All Bookings"},{id:"schedule",l:"⚙️ Availability"}].map(t=>(
+        {[{id:"calendar",l:"📅 Calendar"},{id:"list",l:"📋 All Bookings"},{id:"schedule",l:"👥 Groups"}].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",
             border:`1px solid ${tab===t.id?C.sky:C.grayL}`,background:tab===t.id?C.sky+"22":"transparent",
             color:tab===t.id?C.sky:C.gray,fontWeight:700,fontSize:13}}>
@@ -4818,7 +4897,7 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
             </div>
           </div>
           <div style={{display:"flex",gap:8}}>
-            <Btn v="teal" onClick={()=>setShowScheduleModal(true)} sx={{padding:"8px 14px",fontSize:12}}>⚙️ Availability</Btn>
+            <Btn v="teal" onClick={()=>setTab("schedule")} sx={{padding:"8px 14px",fontSize:12}}>👥 + Group</Btn>
             <Btn v="org" onClick={()=>setShowAddModal(true)} sx={{padding:"8px 14px",fontSize:12}}>+ Add Client</Btn>
           </div>
         </div>
@@ -4930,32 +5009,28 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
       {/* ── AVAILABILITY TAB ── */}
       {tab==="schedule"&&<>
         <div style={{color:C.gray,fontSize:13,marginBottom:20,lineHeight:1.6}}>
-          Set recurring weekly hours and create named group slots that clients can register for.
+          Manage recurring weekly hours and group training sessions.
         </div>
 
-        {/* ── Recurring Weekly Hours ── */}
-        <Card sx={{marginBottom:18}}>
-          <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>
-            🔁 Recurring Weekly Hours
-          </div>
-          <div style={{color:C.gray,fontSize:12,marginBottom:16}}>
-            These hours repeat every week automatically. Mon–Fri is always 4pm–8pm. Set Saturday and Sunday below.
-          </div>
+        {/* Recurring Weekly Hours */}
+        <div style={{background:C.navyMid,borderRadius:12,padding:16,marginBottom:16,border:`1px solid ${C.grayL}`}}>
+          <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>🔁 Recurring Weekly Hours</div>
+          <div style={{color:C.gray,fontSize:12,marginBottom:14}}>Mon–Fri is always 4pm–8pm. Toggle Saturday & Sunday slots below — they repeat every week automatically.</div>
           {["Saturday","Sunday"].map(day=>{
             const slots=localSched?.availability?.[day]||[];
             return (
-              <div key={day} style={{marginBottom:16}}>
-                <div style={{color:C.white,fontWeight:800,fontSize:14,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:10}}>{day}</div>
+              <div key={day} style={{marginBottom:14}}>
+                <div style={{color:C.white,fontWeight:800,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>{day}</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
                   {WEEKEND_SLOTS.map(s=>{
                     const on=slots.includes(s);
                     return (
                       <button key={s} onClick={()=>{
                         const cur=localSched?.availability||{};
-                        const daySlots=cur[day]||[];
-                        const newSlots=on?daySlots.filter(x=>x!==s):[...daySlots,s].sort((a,b)=>toMins(a)-toMins(b));
-                        setLocalSched(p=>({...p,availability:{...cur,[day]:newSlots}}));
-                      }} style={{padding:"8px 4px",borderRadius:8,cursor:"pointer",textAlign:"center",
+                        const ds=cur[day]||[];
+                        const ns2=on?ds.filter(x=>x!==s):[...ds,s].sort((a,b)=>toMins(a)-toMins(b));
+                        setLocalSched(p=>({...p,availability:{...cur,[day]:ns2}}));
+                      }} style={{padding:"7px 4px",borderRadius:7,cursor:"pointer",textAlign:"center",
                         border:`2px solid ${on?C.sky:C.grayL}`,background:on?C.sky+"22":C.navy,
                         color:on?C.sky:C.gray,fontWeight:700,fontSize:11}}>
                         {on?"✓ ":""}{s}
@@ -4966,141 +5041,145 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
               </div>
             );
           })}
-          <Btn v="pri" onClick={async()=>{await saveSchedule(localSched);onUpdateSchedule(localSched);}} sx={{width:"100%",padding:"11px 0",fontSize:13}}>
+          <Btn v="pri" onClick={async()=>{await saveSchedule(localSched);onUpdateSchedule(localSched);}} sx={{width:"100%",padding:"10px 0",fontSize:13,marginTop:8}}>
             💾 Save Weekly Hours
           </Btn>
-        </Card>
+        </div>
 
-        {/* ── Named Group Slots ── */}
-        <Card>
-          <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>
-            👥 Group Training Slots
-          </div>
-          <div style={{color:C.gray,fontSize:12,marginBottom:16}}>
-            Create named recurring slots (e.g. "HS Boys" every Monday at 5pm) that allow 4–6 people to register.
-          </div>
+        {/* Group Training Slots */}
+        <div style={{background:C.navyMid,borderRadius:12,padding:16,border:`1px solid ${C.grayL}`}}>
+          <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>👥 Group Training Slots</div>
+          <div style={{color:C.gray,fontSize:12,marginBottom:14}}>Create named recurring groups (e.g. "HS Boys" every Monday at 5pm). Each group recurs until the end date you set.</div>
 
-          {/* Existing group slots */}
-          {(localSched?.groupSlots||[]).map((gs,i)=>(
-            <div key={gs.id} style={{background:C.navy,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.sky}33`}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                <div>
-                  <div style={{color:C.white,fontWeight:700,fontSize:14}}>{gs.name}</div>
-                  <div style={{color:C.gray,fontSize:12,marginTop:2}}>
-                    {gs.day} · {gs.time} · Max {gs.maxPlayers} players
+          {(localSched?.groupSlots||[]).map((gs,gi)=>{
+            const isExpired=gs.endDate&&new Date(gs.endDate+"T23:59:59")<new Date();
+            const regs=gs.registrants||[];
+            const col=dc(gi);
+            return (
+              <div key={gs.id} style={{background:C.navy,borderRadius:10,padding:14,marginBottom:10,
+                border:`1px solid ${isExpired?C.red+"44":col+"44"}`,opacity:isExpired?0.7:1}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{color:col,fontWeight:800,fontSize:14}}>{gs.name}</span>
+                      {isExpired&&<span style={{background:C.red+"22",color:C.red,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>Expired</span>}
+                    </div>
+                    <div style={{color:C.gray,fontSize:12,marginTop:2}}>Every {gs.day} · {gs.time} · Max {gs.maxPlayers}</div>
+                    {gs.endDate&&<div style={{color:isExpired?C.red:C.gold,fontSize:11,fontWeight:600,marginTop:1}}>
+                      {isExpired?"Ended":"Runs until"} {fmtD(gs.endDate)}
+                    </div>}
                   </div>
+                  <button onClick={async()=>{
+                    const ng=(localSched.groupSlots||[]).filter(x=>x.id!==gs.id);
+                    const ns={...localSched,groupSlots:ng};
+                    setLocalSched(ns); await saveSchedule(ns); onUpdateSchedule(ns);
+                  }} style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
+                    borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
                 </div>
-                <button onClick={async()=>{
-                  const newSlots=(localSched.groupSlots||[]).filter(x=>x.id!==gs.id);
-                  const ns={...localSched,groupSlots:newSlots};
-                  setLocalSched(ns);
-                  await saveSchedule(ns); onUpdateSchedule(ns);
-                }} style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
-                  borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>✕ Remove</button>
-              </div>
-              {/* Show registrants for this slot */}
-              {(() => {
-                const regs=(gs.registrants||[]);
-                return regs.length>0?(
-                  <div style={{borderTop:`1px solid ${C.grayL}`,paddingTop:8}}>
+                {regs.length>0&&(
+                  <div style={{borderTop:`1px solid ${C.grayL}`,paddingTop:8,marginTop:4}}>
                     <div style={{color:C.gold,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>
-                      Registered ({regs.length}/{gs.maxPlayers})
+                      Players ({regs.length}/{gs.maxPlayers})
                     </div>
                     {regs.map((r,ri)=>(
                       <div key={ri} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                        padding:"5px 0",borderTop:ri>0?`1px solid ${C.grayL}`:"none"}}>
+                        padding:"4px 0",borderTop:ri>0?`1px solid ${C.grayL}`:"none"}}>
                         <div>
                           <span style={{color:C.white,fontSize:12,fontWeight:600}}>{r.name}</span>
                           {r.phone&&<span style={{color:C.gray,fontSize:11,marginLeft:8}}>📞 {r.phone}</span>}
                           {r.email&&<span style={{color:C.gray,fontSize:11,marginLeft:8}}>✉️ {r.email}</span>}
                         </div>
                         <button onClick={async()=>{
-                          const newRegs=regs.filter((_,idx)=>idx!==ri);
-                          const newGroupSlots=(localSched.groupSlots||[]).map(x=>x.id===gs.id?{...x,registrants:newRegs}:x);
-                          const ns={...localSched,groupSlots:newGroupSlots};
+                          const nr=regs.filter((_,idx)=>idx!==ri);
+                          const ng=(localSched.groupSlots||[]).map(x=>x.id===gs.id?{...x,registrants:nr}:x);
+                          const ns={...localSched,groupSlots:ng};
                           setLocalSched(ns); await saveSchedule(ns); onUpdateSchedule(ns);
                         }} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
                       </div>
                     ))}
                   </div>
-                ):(
-                  <div style={{color:C.grayL,fontSize:11,marginTop:4}}>No registrants yet</div>
-                );
-              })()}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
 
-          {/* Add new group slot form */}
+          {/* Create new group form */}
           {(()=>{
-            const [showForm,setShowForm]=useState(false);
-            const [gForm,setGForm]=useState({name:"",day:"Monday",time:"4:00 PM",maxPlayers:"6"});
-            const GROUP_NAMES=["HS Boys","HS Girls","MS Boys","MS Girls","Custom..."];
-            const [customName,setCustomName]=useState(false);
-            const allDaySlots=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-            const timeOpts=[...WEEKDAY_SLOTS,...WEEKEND_SLOTS].filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>toMins(a)-toMins(b));
-            return showForm?(
-              <div style={{background:C.navyMid,borderRadius:12,padding:16,border:`1px solid ${C.sky}44`}}>
-                <div style={{color:C.sky,fontWeight:800,fontSize:13,marginBottom:14}}>New Group Slot</div>
+            const [showGForm,setShowGForm]=useState(false);
+            const [gf,setGf]=useState({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});
+            const GROUP_PRESETS=["HS Boys","HS Girls","MS Boys","MS Girls","Custom..."];
+            const allDays=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+            const allTimes=[...WEEKDAY_SLOTS,...WEEKEND_SLOTS].filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>toMins(a)-toMins(b));
+            if(!showGForm) return (
+              <button onClick={()=>setShowGForm(true)}
+                style={{width:"100%",padding:"10px 0",background:"transparent",
+                  border:`2px dashed ${C.sky}55`,borderRadius:10,color:C.sky,
+                  cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                + Create New Group
+              </button>
+            );
+            return (
+              <div style={{background:C.navyMid,borderRadius:10,padding:14,border:`1px solid ${C.sky}44`}}>
+                <div style={{color:C.sky,fontWeight:800,fontSize:13,marginBottom:12}}>New Group Slot</div>
                 <div style={{marginBottom:10}}>
                   <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Group Name</div>
-                  <select value={customName?"Custom...":gForm.name}
+                  <select value={gf.customName?"Custom...":gf.name}
                     onChange={e=>{
-                      if(e.target.value==="Custom..."){setCustomName(true);setGForm(f=>({...f,name:""}));}
-                      else{setCustomName(false);setGForm(f=>({...f,name:e.target.value}));}
+                      if(e.target.value==="Custom...") setGf(f=>({...f,customName:true,name:""}));
+                      else setGf(f=>({...f,customName:false,name:e.target.value}));
                     }}
-                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",marginBottom:customName?8:0}}>
+                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",marginBottom:gf.customName?8:0}}>
                     <option value="">Select group...</option>
-                    {GROUP_NAMES.map(n=><option key={n}>{n}</option>)}
+                    {GROUP_PRESETS.map(n=><option key={n}>{n}</option>)}
                   </select>
-                  {customName&&<input value={gForm.name} onChange={e=>setGForm(f=>({...f,name:e.target.value}))}
-                    placeholder="Enter group name..."
+                  {gf.customName&&<input value={gf.name} onChange={e=>setGf(f=>({...f,name:e.target.value}))} placeholder="Type group name..."
                     style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>}
                 </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
                   <div>
                     <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Day</div>
-                    <select value={gForm.day} onChange={e=>setGForm(f=>({...f,day:e.target.value}))}
-                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"10px 8px",outline:"none"}}>
-                      {allDaySlots.map(d=><option key={d}>{d}</option>)}
+                    <select value={gf.day} onChange={e=>setGf(f=>({...f,day:e.target.value}))}
+                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
+                      {allDays.map(d=><option key={d}>{d}</option>)}
                     </select>
                   </div>
                   <div>
                     <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Time</div>
-                    <select value={gForm.time} onChange={e=>setGForm(f=>({...f,time:e.target.value}))}
-                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"10px 8px",outline:"none"}}>
-                      {timeOpts.map(t=><option key={t}>{t}</option>)}
+                    <select value={gf.time} onChange={e=>setGf(f=>({...f,time:e.target.value}))}
+                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
+                      {allTimes.map(t=><option key={t}>{t}</option>)}
                     </select>
                   </div>
                   <div>
-                    <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Max Players</div>
-                    <select value={gForm.maxPlayers} onChange={e=>setGForm(f=>({...f,maxPlayers:e.target.value}))}
-                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"10px 8px",outline:"none"}}>
+                    <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Max</div>
+                    <select value={gf.maxPlayers} onChange={e=>setGf(f=>({...f,maxPlayers:e.target.value}))}
+                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
                       {[4,5,6].map(n=><option key={n}>{n}</option>)}
                     </select>
                   </div>
                 </div>
+                <div style={{marginBottom:14}}>
+                  <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Recurring Until *</div>
+                  <input type="date" value={gf.endDate} onChange={e=>setGf(f=>({...f,endDate:e.target.value}))}
+                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+                  <div style={{color:C.gray,fontSize:11,marginTop:4}}>Group repeats every {gf.day} until this date</div>
+                </div>
                 <div style={{display:"flex",gap:8}}>
-                  <Btn v="gh" onClick={()=>{setShowForm(false);setCustomName(false);}} sx={{flex:1}}>Cancel</Btn>
+                  <Btn v="gh" onClick={()=>{setShowGForm(false);setGf({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});}} sx={{flex:1}}>Cancel</Btn>
                   <Btn v="pri" onClick={async()=>{
-                    if(!gForm.name.trim()) return;
-                    const newSlot={id:Date.now(),name:gForm.name.trim(),day:gForm.day,time:gForm.time,maxPlayers:parseInt(gForm.maxPlayers),registrants:[]};
-                    const newGroupSlots=[...(localSched.groupSlots||[]),newSlot];
-                    const ns={...localSched,groupSlots:newGroupSlots};
+                    if(!gf.name.trim()||!gf.endDate) return;
+                    const newSlot={id:Date.now(),name:gf.name.trim(),day:gf.day,time:gf.time,
+                      maxPlayers:parseInt(gf.maxPlayers),endDate:gf.endDate,registrants:[],createdAt:new Date().toISOString()};
+                    const ng=[...(localSched.groupSlots||[]),newSlot];
+                    const ns={...localSched,groupSlots:ng};
                     setLocalSched(ns); await saveSchedule(ns); onUpdateSchedule(ns);
-                    setShowForm(false); setGForm({name:"",day:"Monday",time:"4:00 PM",maxPlayers:"6"}); setCustomName(false);
-                  }} dis={!gForm.name.trim()} sx={{flex:2}}>+ Add Group Slot</Btn>
+                    setShowGForm(false); setGf({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});
+                  }} dis={!gf.name.trim()||!gf.endDate} sx={{flex:2}}>✓ Create Group</Btn>
                 </div>
               </div>
-            ):(
-              <button onClick={()=>setShowForm(true)}
-                style={{width:"100%",padding:"11px 0",background:"transparent",
-                  border:`2px dashed ${C.sky}55`,borderRadius:10,color:C.sky,cursor:"pointer",
-                  fontWeight:700,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>
-                + Add Group Training Slot
-              </button>
             );
           })()}
-        </Card>
+        </div>
       </>}
 
       {/* Add Client Modal */}
