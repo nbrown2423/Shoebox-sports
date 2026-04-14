@@ -711,7 +711,7 @@ function ScheduleBuilder({tournament, initialGames, onSave, onClose}) {
 function CreateModal({onSave, onClose}) {
   const [step,    setStep]    = useState(1);
   const [form,    setForm]    = useState({
-    name:"", startDate:"", numDays:"2",
+    name:"", startDate:"", regCloseDate:"", numDays:"2",
     startTime:"8:00 AM", gameDuration:"60",
     location:"Shoebox Sports - Fenton, MI",
   });
@@ -758,6 +758,7 @@ function CreateModal({onSave, onClose}) {
     const divs = makeDivisions();
     const base = {
       id:Date.now(), name:form.name, startDate:form.startDate,
+      regCloseDate:form.regCloseDate,
       numDays:parseInt(form.numDays), startTime:form.startTime,
       gameDuration:parseInt(form.gameDuration),
       location:form.location, status:"upcoming",
@@ -824,6 +825,12 @@ function CreateModal({onSave, onClose}) {
               <Sel label="Number of Days" value={form.numDays} onChange={e=>upd("numDays",e.target.value)}>
                 {[1,2,3,4].map(n=><option key={n} value={n}>{n} Day{n>1?"s":""}</option>)}
               </Sel>
+            </div>
+            <div style={{marginBottom:14}}>
+              <Inp label="Registration Close Date" type="date" value={form.regCloseDate} onChange={e=>upd("regCloseDate",e.target.value)}/>
+              <div style={{color:C.gray,fontSize:11,marginTop:4}}>
+                Teams will not be able to register after this date. Leave blank for no close date.
+              </div>
             </div>
             <div style={{background:C.navy,borderRadius:12,padding:18,marginBottom:14,border:`1px solid ${C.grayL}`}}>
               <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:14}}>
@@ -1455,6 +1462,7 @@ function AdminCourts({tournament}) {
 function EditTournamentModal({tournament, onSave, onClose}) {
   const [form,setForm]=useState({
     name:tournament.name, startDate:tournament.startDate,
+    regCloseDate:tournament.regCloseDate||"",
     numDays:String(tournament.numDays), startTime:tournament.startTime,
     gameDuration:String(tournament.gameDuration),
     location:tournament.location, status:tournament.status,
@@ -1516,6 +1524,13 @@ function EditTournamentModal({tournament, onSave, onClose}) {
               <Sel label="Number of Days" value={form.numDays} onChange={e=>upd("numDays",e.target.value)}>
                 {[1,2,3,4].map(n=><option key={n} value={n}>{n} Day{n>1?"s":""}</option>)}
               </Sel>
+            </div>
+            <div style={{marginBottom:14}}>
+              <Inp label="Registration Close Date" type="date" value={form.regCloseDate} onChange={e=>upd("regCloseDate",e.target.value)}/>
+              <div style={{color:C.gray,fontSize:11,marginTop:4}}>
+                Teams cannot register after this date. Leave blank for no close date.
+                {form.regCloseDate&&<span style={{color:C.gold,fontWeight:700}}> Currently: {fmtD(form.regCloseDate)}</span>}
+              </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <Sel label="First Game Start Time" value={form.startTime} onChange={e=>upd("startTime",e.target.value)}>
@@ -1769,6 +1784,12 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
                   <span>📅 {tDates(t).map(fmtD).join(" → ")}</span>
                   <span>🕐 {t.startTime}</span>
                   <span>⏱ {t.gameDuration}min</span>
+                  {t.regCloseDate&&(()=>{
+                    const closed=new Date(t.regCloseDate+"T23:59:59")<new Date();
+                    return <span style={{color:closed?C.red:C.gold}}>
+                      {closed?"⛔ Reg. closed":"⏰ Reg. closes"} {fmtD(t.regCloseDate)}
+                    </span>;
+                  })()}
                   <span>😴 {t.restGap===0?"No min rest":`${t.restGap/60}hr rest`}</span>
                   <span>🏀 {t.divisions.reduce((s,d)=>s+d.teams.length,0)} teams</span>
                   <span>📋 {t.games.filter(g=>g.court).length}/{t.games.length} scheduled</span>
@@ -1896,7 +1917,7 @@ function AdminLogin({onSuccess, logoUrl}) {
 }
 
 // ─── PUBLIC HOME PAGE ─────────────────────────────────────────────────────────
-function PublicHome({data, onSelectTournament, logoUrl, onRegister}) {
+function PublicHome({data, onSelectTournament, logoUrl, onRegister, onRegister3v3}) {
   const active   = data.tournaments.filter(t=>t.status==="active");
   const upcoming = data.tournaments.filter(t=>t.status==="upcoming");
   const past     = data.tournaments.filter(t=>t.status==="complete");
@@ -1921,7 +1942,15 @@ function PublicHome({data, onSelectTournament, logoUrl, onRegister}) {
             <div style={{color:C.gray,fontSize:13,marginBottom:4}}>
               📅 {dates.map(fmtD).join(" → ")}
             </div>
-            <div style={{color:C.gray,fontSize:12}}>📍 {t.location}</div>
+            <div style={{color:C.gray,fontSize:12,marginBottom:4}}>📍 {t.location}</div>
+            {t.regCloseDate&&(()=>{
+              const closed=new Date(t.regCloseDate+"T23:59:59")<new Date();
+              return (
+                <div style={{color:closed?C.red:C.gold,fontSize:12,fontWeight:600}}>
+                  {closed?`⛔ Registration closed ${fmtD(t.regCloseDate)}`:`⏰ Reg. closes ${fmtD(t.regCloseDate)}`}
+                </div>
+              );
+            })()}
           </div>
           <Badge c={isLive?C.green:isUpcoming?C.gold:C.gray}>
             {isLive?"● Live":isUpcoming?"Upcoming":"Complete"}
@@ -1971,10 +2000,10 @@ function PublicHome({data, onSelectTournament, logoUrl, onRegister}) {
       </div>
 
       <div style={{padding:"20px 16px"}}>
-        {/* Register CTA */}
+        {/* Register CTA — 5v5 tournaments */}
         <div onClick={onRegister}
           style={{background:`linear-gradient(135deg,#E8770A,#F59B30)`,borderRadius:14,
-            padding:"16px 20px",marginBottom:20,cursor:"pointer",
+            padding:"16px 20px",marginBottom:12,cursor:"pointer",
             display:"flex",justifyContent:"space-between",alignItems:"center",
             boxShadow:"0 4px 20px #E8770A44"}}>
           <div>
@@ -1982,6 +2011,23 @@ function PublicHome({data, onSelectTournament, logoUrl, onRegister}) {
             <div style={{color:"rgba(255,255,255,0.8)",fontSize:13,marginTop:2}}>Sign up for an upcoming tournament</div>
           </div>
           <div style={{color:"#fff",fontSize:24}}>📝</div>
+        </div>
+
+        {/* 3v3 Register CTA */}
+        <div onClick={onRegister3v3}
+          style={{background:`linear-gradient(135deg,${C.sky},${C.light})`,borderRadius:14,
+            padding:"16px 20px",marginBottom:20,cursor:"pointer",
+            display:"flex",justifyContent:"space-between",alignItems:"center",
+            boxShadow:`0 4px 20px ${C.sky}44`}}>
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+              <div style={{background:"rgba(255,255,255,0.25)",borderRadius:6,padding:"2px 8px",
+                color:"#fff",fontWeight:900,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>3v3</div>
+              <div style={{color:"#fff",fontWeight:900,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif"}}>Register Your Team</div>
+            </div>
+            <div style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>Sign up for 3v3 tournament play</div>
+          </div>
+          <div style={{color:"#fff",fontSize:24}}>🏀</div>
         </div>
         {/* Live tournaments */}
         {active.length>0&&<>
@@ -2425,6 +2471,11 @@ function RegistrationForm({data, onSubmit, onBack}) {
     t.id===parseInt(form.tournamentId)||t.id===form.tournamentId
   );
 
+  // Check if registration is closed
+  const isRegClosed = selTournament?.regCloseDate
+    ? new Date(selTournament.regCloseDate+"T23:59:59") < new Date()
+    : false;
+
   const isDivFull=(gradeId,gender)=>{
     if(!selTournament) return false;
     const div=selTournament.divisions.find(d=>d.gradeId===gradeId&&d.gender===gender);
@@ -2437,6 +2488,7 @@ function RegistrationForm({data, onSubmit, onBack}) {
   const validate=()=>{
     const e={};
     if(!form.tournamentId) e.tournamentId="Please select a tournament";
+    if(isRegClosed) e.tournamentId="Registration for this tournament is closed";
     if(!form.coachName.trim()) e.coachName="Coach name is required";
     if(!form.phone.trim()) e.phone="Phone number is required";
     if(!form.email.trim()||!form.email.includes("@")) e.email="Valid email is required";
@@ -2586,10 +2638,30 @@ function RegistrationForm({data, onSubmit, onBack}) {
               borderRadius:8,color:form.tournamentId?C.white:C.gray,fontSize:14,padding:"11px 14px",
               outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}>
             <option value="">Select a tournament...</option>
-            {data.tournaments.filter(t=>t.status==="upcoming"||t.status==="active").map(t=>(
-              <option key={t.id} value={t.id}>{t.name} — {tDates(t).map(fmtD).join(" → ")}</option>
-            ))}
+            {data.tournaments.filter(t=>t.status==="upcoming"||t.status==="active").map(t=>{
+              const closed=t.regCloseDate&&new Date(t.regCloseDate+"T23:59:59")<new Date();
+              return (
+                <option key={t.id} value={t.id}>
+                  {t.name} — {tDates(t).map(fmtD).join(" → ")}{closed?" (Registration Closed)":""}
+                </option>
+              );
+            })}
           </select>
+          {selTournament?.regCloseDate&&(
+            <div style={{marginTop:6}}>
+              {isRegClosed?(
+                <div style={{background:C.red+"22",border:`1px solid ${C.red}44`,borderRadius:8,
+                  padding:"8px 12px",color:C.red,fontSize:12,fontWeight:700}}>
+                  ⛔ Registration closed on {fmtD(selTournament.regCloseDate)}
+                </div>
+              ):(
+                <div style={{background:C.gold+"18",border:`1px solid ${C.gold}44`,borderRadius:8,
+                  padding:"8px 12px",color:C.gold,fontSize:12,fontWeight:600}}>
+                  ⏰ Registration closes {fmtD(selTournament.regCloseDate)}
+                </div>
+              )}
+            </div>
+          )}
           <FErr k="tournamentId"/>
         </div>
 
@@ -2718,9 +2790,10 @@ function RegistrationForm({data, onSubmit, onBack}) {
           <FErr k="agreed"/>
         </div>
 
-        <Btn v="org" onClick={handleSubmit} dis={submitting}
-          sx={{width:"100%",padding:"14px 0",fontSize:15,marginBottom:12}}>
-          {submitting?"Submitting...":
+        <Btn v="org" onClick={handleSubmit} dis={submitting||isRegClosed}
+          sx={{width:"100%",padding:"14px 0",fontSize:15,marginBottom:12,
+            opacity:isRegClosed?0.5:1}}>
+          {isRegClosed?"Registration Closed":submitting?"Submitting...":
             `Submit ${teams.length} Team Registration${teams.length>1?"s":""} →`}
         </Btn>
         <button onClick={onBack}
@@ -2963,6 +3036,295 @@ function AdminRegistrations({tournament, onUpdateTournament}) {
   );
 }
 
+// ─── 3V3 CONSTANTS ────────────────────────────────────────────────────────────
+const THREEV3_DIVISIONS = [
+  { id:"hs_boys",   label:"High School Boys",  color:"#2A9ED8" },
+  { id:"mens_1930", label:"Men's 19-30",        color:"#27C97A" },
+  { id:"mens_30p",  label:"Men's 30+",          color:"#B57BFF" },
+  { id:"womens",    label:"Women's",            color:"#FF6B9D" },
+];
+
+// ─── 3V3 REGISTRATION FORM ────────────────────────────────────────────────────
+function ThreevThreeForm({onBack, logoUrl}) {
+  const [form, setForm] = useState({
+    teamName:"", division:"", email:"", phone:"",
+    player1:"", player2:"", player3:"",
+    player4:"", player5:"",
+    agreed:false,
+  });
+  const [errors, setErrors]     = useState({});
+  const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const upd = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const validate = () => {
+    const e = {};
+    if (!form.teamName.trim())  e.teamName  = "Team name is required";
+    if (!form.division)         e.division  = "Please select a division";
+    if (!form.email.trim()||!form.email.includes("@")) e.email = "Valid email is required";
+    if (!form.phone.trim())     e.phone     = "Phone number is required";
+    if (!form.player1.trim())   e.player1   = "Player 1 name is required";
+    if (!form.player2.trim())   e.player2   = "Player 2 name is required";
+    if (!form.player3.trim())   e.player3   = "Player 3 name is required";
+    if (!form.agreed)           e.agreed    = "You must agree to the terms";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = async () => {
+    if (!validate()) return;
+    setSubmitting(true);
+
+    // Build players list
+    const players = [form.player1, form.player2, form.player3, form.player4, form.player5]
+      .filter(p=>p.trim())
+      .map((p,i)=>`${i+1}. ${p.trim()}`)
+      .join("\n");
+
+    const div = THREEV3_DIVISIONS.find(d=>d.id===form.division);
+
+    // Send admin notification
+    await sendEmail(EJS.adminTemplate, {
+      tournament_name:  "3v3 Tournament",
+      tournament_dates: "TBD",
+      location:         "Fenton, MI",
+      coach_name:       form.teamName.trim(),
+      coach_email:      form.email.trim(),
+      coach_phone:      form.phone.trim(),
+      teams_list:       `Team: ${form.teamName}\nDivision: ${div?.label||form.division}\n\nPlayers:\n${players}`,
+      team_count:       "1",
+      submitted_at:     new Date().toLocaleString(),
+    });
+
+    // Send confirmation to registrant
+    await sendEmail(EJS.coachTemplate, {
+      coach_name:       form.teamName.trim(),
+      coach_email:      form.email.trim(),
+      tournament_name:  "3v3 Tournament",
+      tournament_dates: "TBD",
+      location:         "Fenton, MI",
+      teams_list:       `Team: ${form.teamName}\nDivision: ${div?.label||form.division}\n\nPlayers:\n${players}`,
+      team_count:       "1",
+      payment_link:     PAYMENT_LINK,
+    });
+
+    setSubmitting(false);
+    setSubmitted(true);
+  };
+
+  const FErr = ({k}) => errors[k]
+    ? <div style={{color:C.red,fontSize:11,marginTop:4,fontWeight:600}}>{errors[k]}</div>
+    : null;
+
+  const selDiv = THREEV3_DIVISIONS.find(d=>d.id===form.division);
+
+  // ── Confirmation ──
+  if (submitted) return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
+      <div style={{padding:"50px 24px 24px",textAlign:"center"}}>
+        <div style={{fontSize:48,marginBottom:12}}>🏀</div>
+        <div style={{color:C.green,fontWeight:900,fontSize:26,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
+          You're Registered!
+        </div>
+        <div style={{color:C.gray,fontSize:14,marginBottom:24,lineHeight:1.6}}>
+          <strong style={{color:C.white}}>{form.teamName}</strong> has been registered for the{" "}
+          <strong style={{color:selDiv?.color||C.sky}}>{selDiv?.label}</strong> division.
+          A confirmation has been sent to <span style={{color:C.sky}}>{form.email}</span>.
+        </div>
+
+        {/* Summary card */}
+        <div style={{background:C.navyMid,borderRadius:14,padding:20,marginBottom:20,textAlign:"left",border:`1px solid ${selDiv?.color||C.sky}44`}}>
+          <div style={{color:selDiv?.color||C.sky,fontWeight:800,fontSize:13,textTransform:"uppercase",
+            letterSpacing:"0.08em",marginBottom:14,fontFamily:"'Barlow Condensed',sans-serif"}}>
+            Registration Summary
+          </div>
+          <div style={{display:"grid",gap:8}}>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <span style={{color:C.gray,fontSize:13}}>Team</span>
+              <span style={{color:C.white,fontWeight:700,fontSize:13}}>{form.teamName}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <span style={{color:C.gray,fontSize:13}}>Division</span>
+              <span style={{color:selDiv?.color||C.sky,fontWeight:700,fontSize:13}}>{selDiv?.label}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <span style={{color:C.gray,fontSize:13}}>Players</span>
+              <span style={{color:C.white,fontSize:13}}>
+                {[form.player1,form.player2,form.player3,form.player4,form.player5].filter(p=>p.trim()).length}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Payment */}
+        <div style={{background:C.navyMid,borderRadius:14,padding:20,marginBottom:20,border:`1px solid ${C.gold}44`}}>
+          <div style={{color:C.gold,fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
+            💰 Complete Your Payment
+          </div>
+          <div style={{color:C.gray,fontSize:13,marginBottom:16,lineHeight:1.6}}>
+            Pay your entry fee through our secure Clover page. Include your <strong style={{color:C.white}}>team name</strong> and <strong style={{color:C.white}}>division</strong> in the payment note.
+          </div>
+          <a href={PAYMENT_LINK} target="_blank" rel="noopener noreferrer"
+            style={{display:"inline-block",background:`linear-gradient(135deg,#00A651,#007A3D)`,
+              color:"#fff",fontWeight:800,fontSize:15,padding:"13px 28px",borderRadius:10,
+              textDecoration:"none",fontFamily:"'Barlow Condensed',sans-serif",
+              letterSpacing:"0.06em",textTransform:"uppercase"}}>
+            Pay Now →
+          </a>
+          <div style={{color:C.gray,fontSize:11,marginTop:10}}>{PAYMENT_LABEL}</div>
+        </div>
+
+        <Btn v="pri" onClick={onBack} sx={{padding:"11px 28px"}}>← Back to Home</Btn>
+      </div>
+    </div>
+  );
+
+  // ── Form ──
+  return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
+      {/* Header */}
+      <div style={{background:`linear-gradient(135deg,#1a1a2e,#16213e)`,
+        padding:"24px 20px",borderBottom:`1px solid ${C.grayL}`}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+          <div style={{background:`linear-gradient(135deg,${C.sky},${C.light})`,borderRadius:10,
+            padding:"8px 14px",fontWeight:900,fontSize:20,color:"#fff",
+            fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.04em"}}>3v3</div>
+          <div>
+            <div style={{color:C.white,fontWeight:900,fontSize:22,fontFamily:"'Barlow Condensed',sans-serif"}}>
+              Tournament Registration
+            </div>
+            <div style={{color:C.gray,fontSize:13}}>Shoebox Sports · Fenton, MI</div>
+          </div>
+        </div>
+        {/* Division selector */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {THREEV3_DIVISIONS.map(d=>(
+            <button key={d.id} onClick={()=>upd("division",d.id)}
+              style={{padding:"12px 10px",borderRadius:10,cursor:"pointer",textAlign:"center",
+                border:`2px solid ${form.division===d.id?d.color:C.grayL}`,
+                background:form.division===d.id?d.color+"22":"transparent",
+                color:form.division===d.id?d.color:C.gray,
+                fontWeight:700,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif",
+                transition:"all 0.15s"}}>
+              {d.label}
+            </button>
+          ))}
+        </div>
+        <FErr k="division"/>
+      </div>
+
+      <div style={{padding:20}}>
+
+        {/* Team & contact */}
+        <div style={{background:C.navyMid,borderRadius:12,padding:16,marginBottom:18,border:`1px solid ${C.grayL}`}}>
+          <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",
+            letterSpacing:"0.08em",marginBottom:14}}>Team & Contact Info</div>
+          {[
+            {k:"teamName", l:"Team Name *",      p:"e.g. Fenton Ballers", type:"text"},
+            {k:"email",    l:"Email Address *",  p:"yourname@email.com",   type:"email"},
+            {k:"phone",    l:"Phone Number *",   p:"(555) 555-5555",       type:"tel"},
+          ].map(({k,l,p,type})=>(
+            <div key={k} style={{marginBottom:12}}>
+              <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",
+                letterSpacing:"0.06em",marginBottom:6}}>{l}</div>
+              <input value={form[k]} onChange={e=>upd(k,e.target.value)} placeholder={p} type={type}
+                style={{width:"100%",background:C.navy,border:`1px solid ${errors[k]?C.red:C.grayL}`,
+                  borderRadius:8,color:C.white,fontSize:14,padding:"11px 14px",
+                  outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+              <FErr k={k}/>
+            </div>
+          ))}
+        </div>
+
+        {/* Players */}
+        <div style={{background:C.navyMid,borderRadius:12,padding:16,marginBottom:18,border:`1px solid ${C.grayL}`}}>
+          <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",
+            letterSpacing:"0.08em",marginBottom:4}}>Player Roster</div>
+          <div style={{color:C.gray,fontSize:12,marginBottom:14}}>
+            3 players required · up to 5 total (2 optional subs)
+          </div>
+
+          {/* Required players */}
+          {[
+            {k:"player1", l:"Player 1 *", req:true},
+            {k:"player2", l:"Player 2 *", req:true},
+            {k:"player3", l:"Player 3 *", req:true},
+          ].map(({k,l})=>(
+            <div key={k} style={{marginBottom:10}}>
+              <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",
+                letterSpacing:"0.06em",marginBottom:6}}>{l}</div>
+              <input value={form[k]} onChange={e=>upd(k,e.target.value)}
+                placeholder="Full name"
+                style={{width:"100%",background:C.navy,border:`1px solid ${errors[k]?C.red:C.grayL}`,
+                  borderRadius:8,color:C.white,fontSize:14,padding:"11px 14px",
+                  outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+              <FErr k={k}/>
+            </div>
+          ))}
+
+          {/* Optional subs */}
+          <div style={{borderTop:`1px solid ${C.grayL}`,marginTop:14,paddingTop:14}}>
+            <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",
+              letterSpacing:"0.06em",marginBottom:10}}>Optional Substitutes</div>
+            {[
+              {k:"player4", l:"Sub Player 4"},
+              {k:"player5", l:"Sub Player 5"},
+            ].map(({k,l})=>(
+              <div key={k} style={{marginBottom:10}}>
+                <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",
+                  letterSpacing:"0.06em",marginBottom:6}}>{l}</div>
+                <input value={form[k]} onChange={e=>upd(k,e.target.value)}
+                  placeholder="Full name (optional)"
+                  style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,
+                    borderRadius:8,color:C.gray,fontSize:14,padding:"11px 14px",
+                    outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Payment info */}
+        <div style={{background:C.gold+"18",border:`1px solid ${C.gold}44`,borderRadius:10,
+          padding:"14px 16px",marginBottom:16}}>
+          <div style={{color:C.gold,fontWeight:800,fontSize:13,marginBottom:4}}>💰 Payment Info</div>
+          <div style={{color:C.gray,fontSize:13,lineHeight:1.6}}>
+            After submitting, complete payment through our secure Clover page at{" "}
+            <strong style={{color:C.white}}>{PAYMENT_LABEL}</strong>.
+            Include your <strong style={{color:C.white}}>team name</strong> and{" "}
+            <strong style={{color:C.white}}>division</strong> in the note.
+          </div>
+        </div>
+
+        {/* Terms */}
+        <div style={{background:C.navyMid,borderRadius:10,padding:"14px 16px",marginBottom:16,
+          border:`1px solid ${errors.agreed?C.red:C.grayL}`}}>
+          <div style={{color:C.white,fontWeight:700,fontSize:13,marginBottom:10}}>Terms & Waiver</div>
+          <div style={{color:C.gray,fontSize:12,lineHeight:1.7,marginBottom:14,maxHeight:120,overflowY:"auto"}}>
+            By registering, I acknowledge that: (1) All participants must follow Shoebox Sports rules and code of conduct. (2) Shoebox Sports is not liable for injuries sustained during tournament play. (3) Registration fees are non-refundable unless the tournament is cancelled by Shoebox Sports. (4) Teams may be disqualified for unsportsmanlike conduct. (5) Photo and video of participants may be used for promotional purposes. (6) The team captain listed is responsible for all players on the roster. (7) All players must be eligible for their registered division. (8) Shoebox Sports reserves the right to refuse registration at their discretion.
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+            <input type="checkbox" checked={form.agreed} onChange={e=>upd("agreed",e.target.checked)}
+              style={{width:18,height:18,cursor:"pointer",accentColor:C.sky}}/>
+            <span style={{color:C.white,fontSize:13,fontWeight:600}}>I agree to the terms and waiver above</span>
+          </label>
+          <FErr k="agreed"/>
+        </div>
+
+        <Btn v="pri" onClick={handleSubmit} dis={submitting}
+          sx={{width:"100%",padding:"14px 0",fontSize:15,
+            background:`linear-gradient(135deg,${C.sky},${C.light})`,marginBottom:12}}>
+          {submitting?"Submitting...":"Submit 3v3 Registration →"}
+        </Btn>
+        <button onClick={onBack}
+          style={{width:"100%",background:"transparent",border:"none",color:C.gray,
+            cursor:"pointer",fontSize:13,padding:"8px 0"}}>
+          ← Back to Home
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const [data,setData]           = useState({ tournaments: [] });
@@ -2972,6 +3334,7 @@ export default function App() {
   const [selectedTId,setSelectedTId]       = useState(null);
   const [showRegister,setShowRegister]     = useState(false);
   const [showTeamList,setShowTeamList]     = useState(false);
+  const [show3v3,setShow3v3]               = useState(false);
   const [logoUrl,setLogoUrl]               = useState("https://raw.githubusercontent.com/nbrown2423/Shoebox-sports/main/logo.jpg");
 
   // Load fonts
@@ -3106,6 +3469,14 @@ export default function App() {
     );
   }
 
+  // Public: 3v3 registration
+  if (show3v3) return (
+    <div style={{background:C.navy,minHeight:"100vh"}}>
+      <PublicHeader onBack={()=>setShow3v3(false)}/>
+      <ThreevThreeForm onBack={()=>setShow3v3(false)} logoUrl={logoUrl}/>
+    </div>
+  );
+
   // Public: registration form
   if (showRegister) return (
     <div style={{background:C.navy,minHeight:"100vh"}}>
@@ -3141,7 +3512,7 @@ export default function App() {
   // Public: home page
   return (
     <div style={{background:C.navy,minHeight:"100vh"}}>
-      <PublicHome data={data} onSelectTournament={id=>setSelectedTId(id)} logoUrl={logoUrl} onRegister={()=>setShowRegister(true)}/>
+      <PublicHome data={data} onSelectTournament={id=>setSelectedTId(id)} logoUrl={logoUrl} onRegister={()=>setShowRegister(true)} onRegister3v3={()=>setShow3v3(true)}/>
       <div style={{textAlign:"center",paddingBottom:20}}>
         <button onClick={()=>setShowAdminLogin(true)}
           style={{background:"transparent",border:"none",color:C.grayL,
