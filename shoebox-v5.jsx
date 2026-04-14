@@ -2322,53 +2322,404 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
 }
 
 // ─── ADMIN LOGIN ──────────────────────────────────────────────────────────────
-const ADMIN_PASSWORD = "Shoebox2026!";
+// ─── USER CREDENTIALS ────────────────────────────────────────────────────────
+const USERS = {
+  Admin: { password:"Shoebox2026!", role:"admin" },
+  Star:  { password:"Coachstar26",  role:"coach" },
+};
 const ADMIN_SESSION_KEY = "shoebox_admin_auth";
-function AdminLogin({onSuccess, logoUrl}) {
-  const [pw,setPw]=useState(""); const [err,setErr]=useState(false); const [show,setShow]=useState(false);
-  const attempt=()=>{
-    if(pw===ADMIN_PASSWORD){
-      sessionStorage.setItem(ADMIN_SESSION_KEY,"1");
-      onSuccess();
+
+// ─── UNIFIED LOGIN PAGE ───────────────────────────────────────────────────────
+function LoginPage({onSuccess, logoUrl}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [show, setShow]         = useState(false);
+  const [err,  setErr]          = useState("");
+
+  const attempt = () => {
+    const user = USERS[username];
+    if (user && user.password === password) {
+      sessionStorage.setItem(ADMIN_SESSION_KEY, user.role);
+      onSuccess(user.role);
     } else {
-      setErr(true); setPw(""); setTimeout(()=>setErr(false),2000);
+      setErr("Incorrect username or password. Try again.");
+      setPassword("");
+      setTimeout(()=>setErr(""),2500);
     }
   };
+
   return (
-    <div style={{minHeight:"100vh",background:C.navy,display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Sans',sans-serif"}}>
-      <div style={{background:C.navyMid,borderRadius:20,padding:36,width:360,maxWidth:"100%",border:`1px solid ${C.grayL}`,boxShadow:`0 20px 60px #00000066`}}>
+    <div style={{minHeight:"100vh",background:C.navy,display:"flex",alignItems:"center",
+      justifyContent:"center",padding:20,fontFamily:"'DM Sans',sans-serif"}}>
+      <div style={{background:C.navyMid,borderRadius:20,padding:36,width:380,maxWidth:"100%",
+        border:`1px solid ${C.grayL}`,boxShadow:`0 20px 60px #00000066`}}>
         <div style={{textAlign:"center",marginBottom:28}}>
           {logoUrl
             ? <img src={logoUrl} alt="Shoebox Sports"
                 style={{maxWidth:200,maxHeight:100,objectFit:"contain",marginBottom:12}}
                 onError={e=>e.target.style.display="none"}/>
             : <Logo sz={52} txt/>}
-          <div style={{color:C.gray,fontSize:13,marginTop:8}}>Admin access only</div>
+          <div style={{color:C.gray,fontSize:13,marginTop:8}}>Staff Login</div>
         </div>
-        <div style={{marginBottom:14}}>
-          <div style={{color:C.gray,fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8}}>Password</div>
+
+        {/* Username */}
+        <div style={{marginBottom:12}}>
+          <div style={{color:C.gray,fontSize:11,fontWeight:700,letterSpacing:"0.06em",
+            textTransform:"uppercase",marginBottom:8}}>Username</div>
+          <input value={username} onChange={e=>setUsername(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&attempt()}
+            placeholder="Enter username"
+            style={{width:"100%",background:C.navy,border:`2px solid ${err?C.red:C.grayL}`,
+              borderRadius:10,color:C.white,fontSize:15,padding:"13px 16px",outline:"none",
+              boxSizing:"border-box",fontFamily:"inherit",transition:"border-color 0.2s"}}/>
+        </div>
+
+        {/* Password */}
+        <div style={{marginBottom:20}}>
+          <div style={{color:C.gray,fontSize:11,fontWeight:700,letterSpacing:"0.06em",
+            textTransform:"uppercase",marginBottom:8}}>Password</div>
           <div style={{position:"relative"}}>
-            <input type={show?"text":"password"} value={pw}
-              onChange={e=>{setPw(e.target.value);setErr(false);}}
+            <input type={show?"text":"password"} value={password}
+              onChange={e=>setPassword(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&attempt()}
-              placeholder="Enter admin password"
-              style={{width:"100%",background:C.navy,border:`2px solid ${err?C.red:C.grayL}`,borderRadius:10,
-                color:C.white,fontSize:15,padding:"13px 44px 13px 16px",outline:"none",
-                boxSizing:"border-box",fontFamily:"inherit",transition:"border-color 0.2s"}}/>
+              placeholder="Enter password"
+              style={{width:"100%",background:C.navy,border:`2px solid ${err?C.red:C.grayL}`,
+                borderRadius:10,color:C.white,fontSize:15,padding:"13px 44px 13px 16px",
+                outline:"none",boxSizing:"border-box",fontFamily:"inherit",transition:"border-color 0.2s"}}/>
             <button onClick={()=>setShow(s=>!s)}
               style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",
                 background:"transparent",border:"none",color:C.gray,cursor:"pointer",fontSize:16}}>
               {show?"🙈":"👁"}
             </button>
           </div>
-          {err&&<div style={{color:C.red,fontSize:12,marginTop:6,fontWeight:600}}>Incorrect password. Try again.</div>}
+          {err&&<div style={{color:C.red,fontSize:12,marginTop:6,fontWeight:600}}>{err}</div>}
         </div>
-        <Btn v="pri" onClick={attempt} sx={{width:"100%",padding:"13px 0",fontSize:15}}>Sign In to Admin</Btn>
+
+        <Btn v="pri" onClick={attempt} sx={{width:"100%",padding:"13px 0",fontSize:15}}>
+          Sign In
+        </Btn>
         <div style={{textAlign:"center",marginTop:16}}>
-          <span style={{color:C.gray,fontSize:12}}>Not an admin? </span>
-          <a href="/" style={{color:C.sky,fontSize:12,fontWeight:700,textDecoration:"none"}}>Go to Public Site →</a>
+          <a href="/" style={{color:C.sky,fontSize:12,fontWeight:700,textDecoration:"none"}}>
+            ← Back to Public Site
+          </a>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── COACH STAR DASHBOARD ─────────────────────────────────────────────────────
+function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, onSignOut, logoUrl}) {
+  const [selDate, setSelDate]     = useState(dateKey(new Date()));
+  const [tab, setTab]             = useState("calendar");
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm]     = useState({name:"",email:"",phone:"",sessionId:"1on1",time:"4:00 PM"});
+  const [localSched, setLocalSched] = useState(schedule);
+  const upd = (k,v) => setAddForm(f=>({...f,[k]:v}));
+
+  const dates = getUpcomingDates(28);
+  const selDateObj = dates.find(d=>dateKey(d)===selDate) || new Date(selDate+"T12:00:00");
+  const allSlots = isWeekend(selDateObj) ? WEEKEND_SLOTS : WEEKDAY_SLOTS;
+  const todayBookings = bookings.filter(b=>b.date===selDate&&b.status!=="cancelled");
+  const blockedSlots = (localSched?.blocked||[]).filter(b=>b.date===selDate).map(b=>b.time);
+  const bookedSlots = todayBookings.map(b=>b.time);
+
+  const toggleBlock = async(date,time) => {
+    const blocked=[...(localSched.blocked||[])];
+    const idx=blocked.findIndex(b=>b.date===date&&b.time===time);
+    const newSched = idx>=0
+      ? {...localSched,blocked:blocked.filter((_,i)=>i!==idx)}
+      : {...localSched,blocked:[...blocked,{date,time}]};
+    setLocalSched(newSched);
+    await saveSchedule(newSched);
+    onUpdateSchedule(newSched);
+  };
+
+  const addClient = async() => {
+    const s = SESSIONS.find(x=>x.id===addForm.sessionId);
+    const b = {
+      id:Date.now(), sessionId:s.id, sessionLabel:s.label, price:s.price,
+      date:selDate, dateLabel:fmtDate(selDateObj), time:addForm.time,
+      clientName:addForm.name.trim(), clientEmail:addForm.email.trim(),
+      clientPhone:addForm.phone.trim(), payMethod:"inperson",
+      payStatus:"unpaid", status:"confirmed",
+      bookedAt:new Date().toISOString(), addedByAdmin:true,
+    };
+    await saveBooking(b);
+    onUpdateBooking(b,"add");
+    setShowAddModal(false);
+    setAddForm({name:"",email:"",phone:"",sessionId:"1on1",time:"4:00 PM"});
+  };
+
+  const cancelBooking = async(b) => {
+    if(!window.confirm(`Cancel ${b.clientName}'s session?`)) return;
+    const updated = {...b,status:"cancelled"};
+    await updateBooking(updated);
+    onUpdateBooking(updated,"update");
+  };
+
+  const removeBooking = async(b) => {
+    if(!window.confirm(`Remove ${b.clientName}'s booking?`)) return;
+    await deleteBooking(b.id);
+    onUpdateBooking(b,"delete");
+  };
+
+  return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",
+      background:`linear-gradient(160deg,${C.navy},${C.navyMid})`}}>
+
+      {/* Top nav */}
+      <div style={{background:C.navyMid,borderBottom:`1px solid ${C.grayL}`,padding:"0 22px",
+        position:"sticky",top:0,zIndex:100,boxShadow:`0 2px 18px #00000044`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+          height:58,maxWidth:900,margin:"0 auto"}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            {logoUrl
+              ? <img src={logoUrl} alt="Shoebox Sports"
+                  style={{height:34,maxWidth:120,objectFit:"contain"}}
+                  onError={e=>e.target.style.display="none"}/>
+              : <Logo sz={30}/>}
+            <div>
+              <div style={{color:C.white,fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                {COACH_NAME}
+              </div>
+              <div style={{color:C.sky,fontSize:11,fontWeight:600}}>Training Schedule</div>
+            </div>
+          </div>
+          <button onClick={onSignOut}
+            style={{background:"transparent",border:`1px solid ${C.grayL}`,borderRadius:50,
+              padding:"7px 16px",color:C.gray,cursor:"pointer",fontWeight:700,fontSize:12,
+              fontFamily:"'Barlow Condensed',sans-serif"}}>
+            🔒 Sign Out
+          </button>
+        </div>
+      </div>
+
+      <div style={{padding:22,maxWidth:900,margin:"0 auto"}}>
+
+        {/* Stats */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
+          {[
+            {l:"Today",v:bookings.filter(b=>b.date===dateKey(new Date())&&b.status!=="cancelled").length,c:C.sky},
+            {l:"This Week",v:(()=>{const today=new Date();const week=getUpcomingDates(7).map(dateKey);return bookings.filter(b=>week.includes(b.date)&&b.status!=="cancelled").length;})(),c:C.gold},
+            {l:"Total Sessions",v:bookings.filter(b=>b.status!=="cancelled").length,c:C.green},
+          ].map(({l,v,c})=>(
+            <div key={l} style={{background:C.navyMid,borderRadius:12,padding:"14px 16px",
+              border:`1px solid ${C.grayL}`,textAlign:"center"}}>
+              <div style={{fontSize:24,fontWeight:900,color:c,fontFamily:"'Barlow Condensed',sans-serif"}}>{v}</div>
+              <div style={{color:C.gray,fontSize:10,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,marginTop:2}}>{l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:"flex",gap:6,marginBottom:20}}>
+          {[{id:"calendar",l:"📅 My Schedule"},{id:"upcoming",l:"📋 Upcoming Sessions"}].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",
+              border:`1px solid ${tab===t.id?C.sky:C.grayL}`,background:tab===t.id?C.sky+"22":"transparent",
+              color:tab===t.id?C.sky:C.gray,fontWeight:700,fontSize:13}}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+
+        {/* ── CALENDAR TAB ── */}
+        {tab==="calendar"&&<>
+          {/* Date strip */}
+          <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:10,marginBottom:16}}>
+            {dates.map(d=>{
+              const key=dateKey(d);
+              const cnt=bookings.filter(b=>b.date===key&&b.status!=="cancelled").length;
+              const isSel=selDate===key;
+              const isToday=key===dateKey(new Date());
+              return (
+                <div key={key} onClick={()=>setSelDate(key)}
+                  style={{flexShrink:0,width:60,background:isSel?C.sky:C.navyMid,
+                    borderRadius:10,padding:"9px 6px",textAlign:"center",cursor:"pointer",
+                    border:`2px solid ${isSel?C.sky:isToday?C.gold:C.grayL}`}}>
+                  <div style={{color:isSel?"#fff":isToday?C.gold:C.gray,fontSize:9,fontWeight:700,textTransform:"uppercase"}}>
+                    {DAYS_OF_WEEK[d.getDay()].slice(0,3)}
+                  </div>
+                  <div style={{color:isSel?"#fff":C.white,fontWeight:800,fontSize:15,margin:"3px 0"}}>{d.getDate()}</div>
+                  {cnt>0
+                    ? <div style={{background:isSel?"rgba(255,255,255,0.3)":C.sky,borderRadius:50,
+                        width:18,height:18,margin:"0 auto",display:"flex",alignItems:"center",
+                        justifyContent:"center",color:"#fff",fontSize:10,fontWeight:800}}>{cnt}</div>
+                    : <div style={{height:18}}/>}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Day header */}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div>
+              <div style={{color:C.white,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                {fmtDate(selDateObj)}
+              </div>
+              <div style={{color:C.gray,fontSize:12}}>
+                {todayBookings.length} session{todayBookings.length!==1?"s":""} booked
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <Btn v="org" onClick={()=>setShowAddModal(true)} sx={{padding:"8px 14px",fontSize:12}}>+ Add Client</Btn>
+            </div>
+          </div>
+
+          {/* Time slots */}
+          {allSlots.map(slot=>{
+            const booking = todayBookings.find(b=>b.time===slot);
+            const isBlocked = blockedSlots.includes(slot);
+            return (
+              <div key={slot} style={{display:"flex",gap:12,alignItems:"stretch",marginBottom:8}}>
+                <div style={{width:70,flexShrink:0,color:C.gold,fontWeight:700,fontSize:12,
+                  fontFamily:"'Barlow Condensed',sans-serif",paddingTop:14}}>{slot}</div>
+                {booking?(
+                  <div style={{flex:1,background:C.navyMid,borderRadius:10,padding:"12px 16px",
+                    border:`1px solid ${C.sky}44`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+                      <div>
+                        <div style={{color:C.white,fontWeight:700,fontSize:15}}>{booking.clientName}</div>
+                        <div style={{color:C.gray,fontSize:12,marginTop:2}}>{booking.sessionLabel} · 1 hour</div>
+                        {booking.clientPhone&&<div style={{color:C.sky,fontSize:12,marginTop:2}}>📞 {booking.clientPhone}</div>}
+                        {booking.clientEmail&&<div style={{color:C.gray,fontSize:11,marginTop:1}}>✉️ {booking.clientEmail}</div>}
+                      </div>
+                      <div style={{display:"flex",gap:6}}>
+                        <Badge c={booking.payStatus==="paid"?C.green:C.gold}>
+                          {booking.payStatus==="paid"?"✓ Paid":"Unpaid"}
+                        </Badge>
+                        <button onClick={()=>cancelBooking(booking)}
+                          style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
+                            borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>
+                          Cancel
+                        </button>
+                        <button onClick={()=>removeBooking(booking)}
+                          style={{background:C.grayD,border:`1px solid ${C.grayL}`,color:C.gray,
+                            borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>
+                          🗑
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ):isBlocked?(
+                  <div style={{flex:1,background:C.red+"11",borderRadius:10,padding:"12px 16px",
+                    border:`1px solid ${C.red}33`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{color:C.red,fontSize:13,fontWeight:600}}>🚫 Blocked</div>
+                    <button onClick={()=>toggleBlock(selDate,slot)}
+                      style={{background:"transparent",border:`1px solid ${C.red}44`,color:C.red,
+                        borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>
+                      Unblock
+                    </button>
+                  </div>
+                ):(
+                  <div style={{flex:1,background:C.navy,borderRadius:10,padding:"12px 16px",
+                    border:`1px dashed ${C.grayL}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div style={{color:C.grayL,fontSize:13}}>Available</div>
+                    <button onClick={()=>toggleBlock(selDate,slot)}
+                      style={{background:"transparent",border:`1px solid ${C.grayL}`,color:C.gray,
+                        borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>
+                      Block
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </>}
+
+        {/* ── UPCOMING SESSIONS TAB ── */}
+        {tab==="upcoming"&&<>
+          {(() => {
+            const upcoming = [...bookings]
+              .filter(b=>b.status!=="cancelled"&&b.date>=dateKey(new Date()))
+              .sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
+            if(upcoming.length===0) return (
+              <div style={{textAlign:"center",padding:"40px 0"}}>
+                <div style={{fontSize:36,marginBottom:12}}>📋</div>
+                <div style={{color:C.white,fontWeight:700,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>No Upcoming Sessions</div>
+                <div style={{color:C.gray,fontSize:13}}>Sessions will appear here when clients book</div>
+              </div>
+            );
+            return upcoming.map(b=>(
+              <div key={b.id} style={{background:C.navyMid,borderRadius:12,padding:"14px 16px",
+                marginBottom:10,border:`1px solid ${C.sky}33`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
+                  <div>
+                    <div style={{color:C.white,fontWeight:700,fontSize:15}}>{b.clientName}</div>
+                    <div style={{color:C.gold,fontSize:13,fontWeight:600,marginTop:2}}>{b.dateLabel} · {b.time}</div>
+                    <div style={{color:C.gray,fontSize:12,marginTop:2}}>{b.sessionLabel}</div>
+                    {b.clientPhone&&<div style={{color:C.sky,fontSize:12,marginTop:4}}>📞 {b.clientPhone}</div>}
+                    {b.clientEmail&&<div style={{color:C.gray,fontSize:11,marginTop:1}}>✉️ {b.clientEmail}</div>}
+                  </div>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <Badge c={b.payStatus==="paid"?C.green:C.gold}>
+                      {b.payStatus==="paid"?"✓ Paid":"Unpaid"}
+                    </Badge>
+                    <button onClick={()=>cancelBooking(b)}
+                      style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
+                        borderRadius:6,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                      Cancel
+                    </button>
+                    <button onClick={()=>removeBooking(b)}
+                      style={{background:C.grayD,border:`1px solid ${C.grayL}`,color:C.gray,
+                        borderRadius:6,padding:"5px 10px",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                      🗑
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ));
+          })()}
+        </>}
+
+      </div>
+
+      {/* Add Client Modal */}
+      {showAddModal&&(
+        <div style={{position:"fixed",inset:0,background:"#000a",zIndex:2000,display:"flex",
+          alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:C.navyMid,borderRadius:18,padding:28,width:400,maxWidth:"100%",
+            border:`1px solid ${C.sky}55`,maxHeight:"85vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+              <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif"}}>Add Client</div>
+              <button onClick={()=>setShowAddModal(false)} style={{background:"transparent",border:"none",color:C.gray,cursor:"pointer",fontSize:20}}>×</button>
+            </div>
+            <div style={{color:C.sky,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:14}}>
+              {fmtDate(selDateObj)}
+            </div>
+            {[{k:"name",l:"Client Name *",p:"Full name",t:"text"},{k:"phone",l:"Phone",p:"(555) 555-5555",t:"tel"},{k:"email",l:"Email",p:"email@example.com",t:"email"}].map(({k,l,p,t})=>(
+              <div key={k} style={{marginBottom:12}}>
+                <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>{l}</div>
+                <input value={addForm[k]||""} onChange={e=>upd(k,e.target.value)} placeholder={p} type={t}
+                  style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,
+                    color:C.white,fontSize:14,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+              </div>
+            ))}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
+              <div>
+                <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Session</div>
+                <select value={addForm.sessionId} onChange={e=>upd("sessionId",e.target.value)}
+                  style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,
+                    color:C.white,fontSize:13,padding:"10px 12px",outline:"none"}}>
+                  {SESSIONS.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Time</div>
+                <select value={addForm.time} onChange={e=>upd("time",e.target.value)}
+                  style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,
+                    color:C.white,fontSize:13,padding:"10px 12px",outline:"none"}}>
+                  {allSlots.map(s=><option key={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <Btn v="gh" onClick={()=>setShowAddModal(false)} sx={{flex:1}}>Cancel</Btn>
+              <Btn v="pri" onClick={addClient} dis={!addForm.name?.trim()} sx={{flex:2}}>Add to Schedule</Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -4538,7 +4889,7 @@ export default function App() {
   const [bookings,setBookings]   = useState([]);
   const [coachSchedule,setCoachSchedule] = useState({availability:{},blocked:[]});
   const [loading,setLoading]     = useState(true);
-  const [adminAuth,setAdminAuth] = useState(()=>sessionStorage.getItem(ADMIN_SESSION_KEY)==="1");
+  const [adminAuth,setAdminAuth] = useState(()=>sessionStorage.getItem(ADMIN_SESSION_KEY)||"");
   const [showAdminLogin,setShowAdminLogin] = useState(false);
   const [selectedTId,setSelectedTId]       = useState(null);
   const [showRegister,setShowRegister]     = useState(false);
@@ -4677,22 +5028,34 @@ export default function App() {
     </div>
   );
 
-  // Admin login screen
+  const signOut = () => { setAdminAuth(""); sessionStorage.removeItem(ADMIN_SESSION_KEY); };
+
+  // Login screen
   if (showAdminLogin && !adminAuth) {
-    return <AdminLogin logoUrl={logoUrl} onSuccess={()=>{setAdminAuth(true);setShowAdminLogin(false);}}/>;
+    return <LoginPage logoUrl={logoUrl} onSuccess={(role)=>{setAdminAuth(role);setShowAdminLogin(false);}}/>;
   }
 
-  // Admin dashboard (password protected)
-  if (adminAuth) {
+  // Coach Star dashboard
+  if (adminAuth==="coach") {
+    return (
+      <CoachDashboard
+        bookings={bookings} schedule={coachSchedule}
+        onUpdateBooking={onUpdateBooking} onUpdateSchedule={onUpdateSchedule}
+        onSignOut={signOut} logoUrl={logoUrl}/>
+    );
+  }
+
+  // Admin dashboard (Nick)
+  if (adminAuth==="admin") {
     return (
       <div style={{background:C.navy,minHeight:"100vh"}}>
         <Admin data={data} onScore={onScore} onUpdateGames={onUpdateGames} onAdd={onAdd}
           onEditTournament={onEditTournament} onDeleteTournament={onDeleteTournament}
           logoUrl={logoUrl} onSaveLogoUrl={setLogoUrl}
-          onGoHome={()=>{ setSelectedTId(null); }}
+          onGoHome={()=>setSelectedTId(null)}
           bookings={bookings} coachSchedule={coachSchedule}
           onUpdateBooking={onUpdateBooking} onUpdateSchedule={onUpdateSchedule}/>
-        <button onClick={()=>{setAdminAuth(false);sessionStorage.removeItem(ADMIN_SESSION_KEY);}}
+        <button onClick={signOut}
           style={{position:"fixed",bottom:18,right:18,zIndex:999,
             background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:50,
             padding:"8px 18px",color:C.gray,cursor:"pointer",fontWeight:700,fontSize:12,
