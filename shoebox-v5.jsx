@@ -45,7 +45,7 @@ const tname  = (divs,id) => { for(const d of divs){const t=d.teams.find(x=>x.id=
 const poolSort = (teams,pool) => teams.filter(t=>t.pool===pool).sort((a,b)=>b.wins-a.wins||(b.pf-b.pa)-(a.pf-a.pa));
 
 // ─── MATCHUP GENERATOR (who plays who — no time/court assigned) ───────────────
-function genMatchups(divs) {
+function genMatchups(divs, gamesPerTeam=null) {
   let gid = Date.now();
   const games = [];
   divs.forEach(div => {
@@ -53,14 +53,38 @@ function genMatchups(divs) {
     div.teams.forEach(t => { if (!pools[t.pool]) pools[t.pool]=[]; pools[t.pool].push(t); });
     // Pool play matchups
     Object.entries(pools).forEach(([pool, pts]) => {
-      for (let i=0; i<pts.length; i++) for (let j=i+1; j<pts.length; j++)
-        games.push({ id:gid++, divisionId:div.id, phase:"pool", pool,
-          homeId:pts[i].id, awayId:pts[j].id,
-          dayIdx:null, court:null, time:null,
-          homeScore:null, awayScore:null, status:"upcoming" });
+      if (gamesPerTeam && gamesPerTeam < pts.length - 1) {
+        // Limit games per team — each team plays exactly gamesPerTeam games
+        // Use round-robin subset: pair each team with the next N opponents
+        const used = new Set();
+        pts.forEach((team, idx) => {
+          let count = 0;
+          for (let j = 1; j <= pts.length - 1 && count < gamesPerTeam; j++) {
+            const oppIdx = (idx + j) % pts.length;
+            const opp = pts[oppIdx];
+            const pairKey = [team.id, opp.id].sort().join("-");
+            if (!used.has(pairKey)) {
+              used.add(pairKey);
+              games.push({ id:gid++, divisionId:div.id, phase:"pool", pool,
+                homeId:team.id, awayId:opp.id,
+                dayIdx:null, court:null, time:null,
+                homeScore:null, awayScore:null, status:"upcoming" });
+              count++;
+            }
+          }
+        });
+      } else {
+        // Full round robin — every team plays every other team once
+        for (let i=0; i<pts.length; i++) for (let j=i+1; j<pts.length; j++)
+          games.push({ id:gid++, divisionId:div.id, phase:"pool", pool,
+            homeId:pts[i].id, awayId:pts[j].id,
+            dayIdx:null, court:null, time:null,
+            homeScore:null, awayScore:null, status:"upcoming" });
+      }
     });
-    // Bracket shells (TBD until pool play is done)
-    const nSemis = Math.min(Object.keys(pools).length, 2);
+    // Bracket shells — single elimination
+    const nPools = Object.keys(pools).length;
+    const nSemis = Math.min(nPools, 2);
     for (let s=0; s<nSemis; s++)
       games.push({ id:gid++, divisionId:div.id, phase:"bracket", round:"Semi",
         homeId:null, awayId:null, dayIdx:null, court:null, time:null,
@@ -685,7 +709,7 @@ function CreateModal({onSave, onClose}) {
       setDivCounts(dc=>{const n={...dc};delete n[key];return n;});
     } else {
       setSelDivs(p=>[...p,{gradeId,gender}]);
-      setDivCounts(dc=>({...dc,[key]:{count:4,capacity:8}}));
+      setDivCounts(dc=>({...dc,[key]:{count:4,capacity:4}}));
     }
   };
 
@@ -708,10 +732,9 @@ function CreateModal({onSave, onClose}) {
 
   const totalDivs = selDivs.length;
 
-  // Step 3: generate matchups then open builder
-  const handleOpenBuilder = () => {
+  // Just create and save the tournament — schedule generated later from admin
+  const handleCreate = () => {
     const divs = makeDivisions();
-    const games = genMatchups(divs);
     const base = {
       id:Date.now(), name:form.name, startDate:form.startDate,
       numDays:parseInt(form.numDays), startTime:form.startTime,
@@ -719,8 +742,7 @@ function CreateModal({onSave, onClose}) {
       location:form.location, status:"upcoming",
       divisions:divs, games:[], registrations:[],
     };
-    setPending({tournament:base, games});
-    setShowBuilder(true);
+    onSave(base);
   };
 
   if (showBuilder&&pending) {
@@ -798,9 +820,9 @@ function CreateModal({onSave, onClose}) {
                 </Sel>
               </div>
               <div style={{background:C.navyMid,borderRadius:10,padding:"12px 14px",border:`1px solid ${C.sky}33`}}>
-                <div style={{color:C.sky,fontSize:12,fontWeight:700,marginBottom:4}}>✏️ How scheduling works</div>
+                <div style={{color:C.sky,fontSize:12,fontWeight:700,marginBottom:4}}>🏀 How it works</div>
                 <div style={{color:C.gray,fontSize:12,lineHeight:1.6}}>
-                  Pool play matchups are automatically generated. You then drag each game onto any court and time slot you choose. Bracket games are added once pool play is complete.
+                  Create the tournament now with your divisions and team counts. Once teams are signed up and finalized, go to the Schedule tab to generate matchups and build the schedule.
                 </div>
               </div>
             </div>
@@ -905,8 +927,8 @@ function CreateModal({onSave, onClose}) {
             })}
             <div style={{display:"flex",gap:10,marginTop:8}}>
               <Btn v="gh" onClick={()=>setStep(2)} sx={{flex:1}}>← Back</Btn>
-              <Btn v="org" onClick={handleOpenBuilder} dis={totalDivs===0} sx={{flex:2}}>
-                ✏️ Generate Matchups & Build Schedule
+              <Btn v="org" onClick={handleCreate} dis={totalDivs===0} sx={{flex:2}}>
+                🏀 Create Tournament
               </Btn>
             </div>
           </>}
@@ -921,11 +943,22 @@ function CreateModal({onSave, onClose}) {
 function AdminSchedule({tournament, onScore, onUpdateGames}) {
   const [scoreGame, setScoreGame] = useState(null);
   const [showBuilder, setShowBuilder] = useState(false);
+  const [showGenModal, setShowGenModal] = useState(false);
+  const [gamesPerTeam, setGamesPerTeam] = useState(2);
   const [homeS, setHomeS] = useState("");
   const [awayS, setAwayS] = useState("");
   const [fDiv, setFDiv] = useState("all");
   const [fDay, setFDay] = useState("all");
   const dates = tDates(tournament);
+
+  const noGames = tournament.games.length === 0;
+
+  const handleGenerate = () => {
+    const games = genMatchups(tournament.divisions, gamesPerTeam);
+    onUpdateGames(games);
+    setShowGenModal(false);
+    setShowBuilder(true);
+  };
 
   const placed   = tournament.games.filter(g=>g.dayIdx!==null&&g.court&&g.time);
   const unplaced = tournament.games.filter(g=>g.dayIdx===null||!g.court||!g.time);
@@ -934,6 +967,14 @@ function AdminSchedule({tournament, onScore, onUpdateGames}) {
     .filter(g=>g.dayIdx!==null&&g.court&&g.time)
     .filter(g=>(fDiv==="all"||g.divisionId===fDiv)&&(fDay==="all"||g.dayIdx===parseInt(fDay)))
     .sort((a,b)=>a.dayIdx-b.dayIdx||toMins(a.time)-toMins(b.time));
+
+  // Max games per team = team count - 1 (full round robin)
+  const maxGames = Math.max(...tournament.divisions.map(d=>
+    Math.max(...[...new Set(d.teams.map(t=>t.pool))].map(pool=>{
+      const poolTeams = d.teams.filter(t=>t.pool===pool);
+      return poolTeams.length - 1;
+    }))
+  ), 1);
 
   return (
     <div>
@@ -957,9 +998,14 @@ function AdminSchedule({tournament, onScore, onUpdateGames}) {
             {unplaced.length} game{unplaced.length!==1?"s":""} not yet scheduled
           </div>
         )}
-        <Btn v="teal" onClick={()=>setShowBuilder(true)} sx={{marginLeft:"auto",padding:"9px 18px",fontSize:12}}>
-          ✏️ Edit Schedule
-        </Btn>
+        <div style={{marginLeft:"auto",display:"flex",gap:8}}>
+          <Btn v="org" onClick={()=>setShowGenModal(true)} sx={{padding:"9px 16px",fontSize:12}}>
+            ⚡ Generate Matchups
+          </Btn>
+          {!noGames&&<Btn v="teal" onClick={()=>setShowBuilder(true)} sx={{padding:"9px 16px",fontSize:12}}>
+            ✏️ Edit Schedule
+          </Btn>}
+        </div>
       </div>
 
       {/* Games by day */}
@@ -1012,9 +1058,76 @@ function AdminSchedule({tournament, onScore, onUpdateGames}) {
       {sorted.length===0&&(
         <div style={{textAlign:"center",padding:"50px 0"}}>
           <div style={{fontSize:40,marginBottom:12}}>📋</div>
-          <div style={{color:C.white,fontWeight:700,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>No games scheduled yet</div>
-          <div style={{color:C.gray,fontSize:14,marginBottom:20}}>Use the Schedule Builder to drag matchups onto the court grid</div>
-          <Btn v="teal" onClick={()=>setShowBuilder(true)}>✏️ Open Schedule Builder</Btn>
+          <div style={{color:C.white,fontWeight:700,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
+            {noGames?"No matchups generated yet":"No games scheduled yet"}
+          </div>
+          <div style={{color:C.gray,fontSize:14,marginBottom:20}}>
+            {noGames
+              ?"Click \"Generate Matchups\" to create pool play games, then drag them onto the schedule"
+              :"All matchups are in the sidebar — open the Schedule Builder to place them"}
+          </div>
+          {noGames
+            ? <Btn v="org" onClick={()=>setShowGenModal(true)}>⚡ Generate Matchups</Btn>
+            : <Btn v="teal" onClick={()=>setShowBuilder(true)}>✏️ Open Schedule Builder</Btn>}
+        </div>
+      )}
+
+      {/* Generate matchups modal */}
+      {showGenModal&&(
+        <div style={{position:"fixed",inset:0,background:"#000a",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:C.navyMid,borderRadius:18,padding:28,width:420,maxWidth:"100%",border:`1px solid ${C.sky}55`,boxShadow:`0 20px 60px #00000088`}}>
+            <div style={{textAlign:"center",marginBottom:20}}>
+              <div style={{fontSize:32,marginBottom:8}}>⚡</div>
+              <div style={{color:C.white,fontWeight:900,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:6}}>Generate Pool Play Matchups</div>
+              <div style={{color:C.gray,fontSize:13,lineHeight:1.6}}>
+                Choose how many pool play games each team plays. Bracket play is always single elimination.
+              </div>
+            </div>
+
+            {/* Divisions summary */}
+            <div style={{background:C.navy,borderRadius:10,padding:14,marginBottom:20}}>
+              <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Divisions & Teams</div>
+              {tournament.divisions.map((d,i)=>(
+                <div key={d.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderTop:i>0?`1px solid ${C.grayL}`:"none"}}>
+                  <span style={{color:dc(i),fontWeight:700,fontSize:13}}>{dlabel(d.gradeId,d.gender)}</span>
+                  <span style={{color:C.gray,fontSize:12}}>{d.teams.length} teams</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Games per team selector */}
+            <div style={{marginBottom:20}}>
+              <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>
+                Pool Play Games Per Team
+              </div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                {[1,2,3,4,5,6].filter(n=>n<=maxGames).map(n=>(
+                  <button key={n} onClick={()=>setGamesPerTeam(n)}
+                    style={{flex:1,minWidth:50,padding:"12px 8px",borderRadius:10,cursor:"pointer",
+                      border:`2px solid ${gamesPerTeam===n?C.sky:C.grayL}`,
+                      background:gamesPerTeam===n?C.sky+"22":C.navy,
+                      color:gamesPerTeam===n?C.sky:C.gray,fontWeight:800,fontSize:16,
+                      fontFamily:"'Barlow Condensed',sans-serif"}}>
+                    {n}
+                  </button>
+                ))}
+                {maxGames<1&&<div style={{color:C.gold,fontSize:13}}>Add teams first before generating matchups</div>}
+              </div>
+              <div style={{color:C.gray,fontSize:12,marginTop:10,lineHeight:1.5}}>
+                {gamesPerTeam===maxGames
+                  ? "Full round robin — every team plays every other team once"
+                  : `Each team plays ${gamesPerTeam} game${gamesPerTeam>1?"s":""} in pool play`}
+                {" "}· Bracket is single elimination.
+              </div>
+            </div>
+
+            <div style={{display:"flex",gap:10}}>
+              <Btn v="gh" onClick={()=>setShowGenModal(false)} sx={{flex:1}}>Cancel</Btn>
+              <Btn v="org" onClick={handleGenerate} dis={maxGames<1} sx={{flex:2}}>
+                ⚡ Generate & Build Schedule
+              </Btn>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1711,15 +1824,27 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
 
 // ─── ADMIN LOGIN ──────────────────────────────────────────────────────────────
 const ADMIN_PASSWORD = "Shoebox2026!";
-function AdminLogin({onSuccess}) {
+const ADMIN_SESSION_KEY = "shoebox_admin_auth";
+function AdminLogin({onSuccess, logoUrl}) {
   const [pw,setPw]=useState(""); const [err,setErr]=useState(false); const [show,setShow]=useState(false);
-  const attempt=()=>{ if(pw===ADMIN_PASSWORD){onSuccess();}else{setErr(true);setPw("");setTimeout(()=>setErr(false),2000);} };
+  const attempt=()=>{
+    if(pw===ADMIN_PASSWORD){
+      sessionStorage.setItem(ADMIN_SESSION_KEY,"1");
+      onSuccess();
+    } else {
+      setErr(true); setPw(""); setTimeout(()=>setErr(false),2000);
+    }
+  };
   return (
     <div style={{minHeight:"100vh",background:C.navy,display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Sans',sans-serif"}}>
       <div style={{background:C.navyMid,borderRadius:20,padding:36,width:360,maxWidth:"100%",border:`1px solid ${C.grayL}`,boxShadow:`0 20px 60px #00000066`}}>
         <div style={{textAlign:"center",marginBottom:28}}>
-          <Logo sz={52} txt/>
-          <div style={{color:C.gray,fontSize:13,marginTop:14}}>Admin access only</div>
+          {logoUrl
+            ? <img src={logoUrl} alt="Shoebox Sports"
+                style={{maxWidth:200,maxHeight:100,objectFit:"contain",marginBottom:12}}
+                onError={e=>e.target.style.display="none"}/>
+            : <Logo sz={52} txt/>}
+          <div style={{color:C.gray,fontSize:13,marginTop:8}}>Admin access only</div>
         </div>
         <div style={{marginBottom:14}}>
           <div style={{color:C.gray,fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8}}>Password</div>
@@ -2753,7 +2878,7 @@ function AdminRegistrations({tournament, onUpdateTournament}) {
 export default function App() {
   const [data,setData]           = useState({ tournaments: [] });
   const [loading,setLoading]     = useState(true);
-  const [adminAuth,setAdminAuth] = useState(false);
+  const [adminAuth,setAdminAuth] = useState(()=>sessionStorage.getItem(ADMIN_SESSION_KEY)==="1");
   const [showAdminLogin,setShowAdminLogin] = useState(false);
   const [selectedTId,setSelectedTId]       = useState(null);
   const [showRegister,setShowRegister]     = useState(false);
@@ -2869,7 +2994,7 @@ export default function App() {
 
   // Admin login screen
   if (showAdminLogin && !adminAuth) {
-    return <AdminLogin onSuccess={()=>{setAdminAuth(true);setShowAdminLogin(false);}}/>;
+    return <AdminLogin logoUrl={logoUrl} onSuccess={()=>{setAdminAuth(true);setShowAdminLogin(false);}}/>;
   }
 
   // Admin dashboard (password protected)
@@ -2879,8 +3004,8 @@ export default function App() {
         <Admin data={data} onScore={onScore} onUpdateGames={onUpdateGames} onAdd={onAdd}
           onEditTournament={onEditTournament} onDeleteTournament={onDeleteTournament}
           logoUrl={logoUrl} onSaveLogoUrl={setLogoUrl}
-          onGoHome={()=>{ setAdminAuth(false); setSelectedTId(null); }}/>
-        <button onClick={()=>setAdminAuth(false)}
+          onGoHome={()=>{ setSelectedTId(null); }}/>
+        <button onClick={()=>{setAdminAuth(false);sessionStorage.removeItem(ADMIN_SESSION_KEY);}}
           style={{position:"fixed",bottom:18,right:18,zIndex:999,
             background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:50,
             padding:"8px 18px",color:C.gray,cursor:"pointer",fontWeight:700,fontSize:12,
