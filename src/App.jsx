@@ -1226,13 +1226,128 @@ function AdminCourts({tournament}) {
   );
 }
 
-// ─── ADMIN SHELL ──────────────────────────────────────────────────────────────
-function Admin({data,onScore,onUpdateGames,onAdd}) {
+// ─── ADMIN SETTINGS TAB ───────────────────────────────────────────────────────
+function AdminSettings({logoUrl, onSaveLogoUrl}) {
+  const [url,setUrl]=useState(logoUrl||"");
+  const [preview,setPreview]=useState(logoUrl||"");
+  const [saved,setSaved]=useState(false);
+  const [fileErr,setFileErr]=useState(false);
+
+  const handleFile=e=>{
+    const file=e.target.files[0];
+    if(!file) return;
+    if(!file.type.startsWith("image/")){setFileErr(true);return;}
+    setFileErr(false);
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      setUrl(ev.target.result);
+      setPreview(ev.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const save=()=>{
+    onSaveLogoUrl(url);
+    setSaved(true);
+    setTimeout(()=>setSaved(false),2500);
+  };
+
+  return (
+    <div style={{maxWidth:520}}>
+      <Ttl sub="Customize how your site looks to the public">Site Settings</Ttl>
+
+      <Card sx={{marginBottom:16}}>
+        <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",
+          letterSpacing:"0.08em",marginBottom:18}}>🖼 Logo</div>
+
+        {/* Current preview */}
+        <div style={{background:C.navy,borderRadius:12,padding:24,textAlign:"center",
+          marginBottom:20,border:`1px solid ${C.grayL}`}}>
+          <div style={{color:C.gray,fontSize:11,textTransform:"uppercase",letterSpacing:"0.06em",
+            fontWeight:700,marginBottom:12}}>Current Logo Preview</div>
+          {preview ? (
+            <img src={preview} alt="Logo preview"
+              style={{maxWidth:220,maxHeight:120,objectFit:"contain",borderRadius:8}}
+              onError={e=>{e.target.style.display="none";}}
+            />
+          ) : (
+            <div style={{padding:"20px 0"}}>
+              <Logo sz={52} txt/>
+              <div style={{color:C.gray,fontSize:12,marginTop:10}}>No logo set — using default</div>
+            </div>
+          )}
+        </div>
+
+        {/* Option 1: Upload file */}
+        <div style={{marginBottom:20}}>
+          <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",
+            letterSpacing:"0.06em",marginBottom:10}}>Option 1 — Upload from your computer</div>
+          <label style={{display:"block",background:C.navy,border:`2px dashed ${C.sky}66`,
+            borderRadius:10,padding:"18px 20px",textAlign:"center",cursor:"pointer"}}>
+            <input type="file" accept="image/*" onChange={handleFile}
+              style={{display:"none"}}/>
+            <div style={{fontSize:28,marginBottom:8}}>📁</div>
+            <div style={{color:C.sky,fontWeight:700,fontSize:14}}>Click to choose a logo file</div>
+            <div style={{color:C.gray,fontSize:12,marginTop:4}}>PNG, JPG, SVG — any image format</div>
+          </label>
+          {fileErr&&<div style={{color:C.red,fontSize:12,marginTop:6}}>Please select a valid image file</div>}
+        </div>
+
+        {/* Option 2: URL */}
+        <div style={{marginBottom:20}}>
+          <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",
+            letterSpacing:"0.06em",marginBottom:10}}>Option 2 — Paste an image URL</div>
+          <div style={{display:"flex",gap:10}}>
+            <input value={url} onChange={e=>{setUrl(e.target.value);}}
+              placeholder="https://yoursite.com/logo.png"
+              style={{flex:1,background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,
+                color:C.white,fontSize:13,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}/>
+            <Btn v="gh" onClick={()=>setPreview(url)} sx={{padding:"11px 16px",fontSize:12,whiteSpace:"nowrap"}}>
+              Preview
+            </Btn>
+          </div>
+        </div>
+
+        {/* Clear logo */}
+        {(url||preview)&&(
+          <button onClick={()=>{setUrl("");setPreview("");onSaveLogoUrl("");}}
+            style={{background:"transparent",border:`1px solid ${C.red}44`,color:C.red,
+              borderRadius:8,padding:"8px 16px",cursor:"pointer",fontSize:12,
+              fontWeight:700,marginBottom:16,display:"block"}}>
+            ✕ Remove logo (use default)
+          </button>
+        )}
+
+        <Btn v="pri" onClick={save} sx={{width:"100%",padding:"13px 0",fontSize:14}}>
+          {saved?"✓ Saved!":"Save Logo"}
+        </Btn>
+
+        <div style={{color:C.gray,fontSize:12,marginTop:14,lineHeight:1.6}}>
+          <strong style={{color:C.white}}>Tip:</strong> For best results use a PNG with a transparent background, 
+          at least 400px wide. After saving, refresh the public home page to see it.
+        </div>
+      </Card>
+
+      <Card>
+        <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",
+          letterSpacing:"0.08em",marginBottom:14}}>🔑 Admin Password</div>
+        <div style={{color:C.gray,fontSize:13,lineHeight:1.6}}>
+          Your current admin password is set in the app code as <code style={{background:C.navy,padding:"2px 8px",borderRadius:4,color:C.white}}>Shoebox2026!</code>
+          <br/><br/>
+          To change it, open <code style={{background:C.navy,padding:"2px 8px",borderRadius:4,color:C.white}}>src/App.jsx</code> in 
+          GitHub, find the line that says <code style={{background:C.navy,padding:"2px 8px",borderRadius:4,color:C.white}}>const ADMIN_PASSWORD</code> near 
+          the top and change the value to whatever you want.
+        </div>
+      </Card>
+    </div>
+  );
+}
+function Admin({data,onScore,onUpdateGames,onAdd,logoUrl,onSaveLogoUrl}) {
   const [aTId,setATId]=useState(data.tournaments[0]?.id);
   const [tab,setTab]=useState("schedule");
   const [showCreate,setShowCreate]=useState(false);
   const t=data.tournaments.find(x=>x.id===aTId)||data.tournaments[0];
-  const tabs=[{id:"schedule",icon:"📋",l:"Schedule"},{id:"standings",icon:"📊",l:"Standings"},{id:"bracket",icon:"🏆",l:"Bracket"},{id:"courts",icon:"🏟",l:"Courts"}];
+  const tabs=[{id:"schedule",icon:"📋",l:"Schedule"},{id:"standings",icon:"📊",l:"Standings"},{id:"bracket",icon:"🏆",l:"Bracket"},{id:"courts",icon:"🏟",l:"Courts"},{id:"settings",icon:"⚙️",l:"Settings"}];
   return (
     <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:`linear-gradient(160deg,${C.navy},${C.navyMid})`}}>
       <div style={{background:C.navyMid,borderBottom:`1px solid ${C.grayL}`,padding:"0 22px",position:"sticky",top:0,zIndex:100,boxShadow:`0 2px 18px #00000044`}}>
@@ -1296,7 +1411,9 @@ function Admin({data,onScore,onUpdateGames,onAdd}) {
       )}
 
       <div style={{padding:22,maxWidth:1200,margin:"0 auto"}}>
-        {t?<>
+        {tab==="settings"
+          ? <AdminSettings logoUrl={logoUrl} onSaveLogoUrl={onSaveLogoUrl}/>
+          : t?<>
           {tab==="schedule"&&<AdminSchedule tournament={t} onScore={onScore} onUpdateGames={g=>onUpdateGames(t.id,g)}/>}
           {tab==="standings"&&<AdminStandings tournament={t}/>}
           {tab==="bracket"&&<AdminBracket tournament={t}/>}
@@ -1314,58 +1431,266 @@ function Admin({data,onScore,onUpdateGames,onAdd}) {
   );
 }
 
-// ─── PLAYER VIEW ──────────────────────────────────────────────────────────────
-function Player({data}) {
-  const [search,setSearch]=useState(""); const [selTeam,setSelTeam]=useState(null);
-  const [aTId,setATId]=useState(data.tournaments[0]?.id); const [aDiv,setADiv]=useState(null);
-  const t=data.tournaments.find(x=>x.id===aTId)||data.tournaments[0];
-  useEffect(()=>{ if(t) setADiv(t.divisions[0]?.id); },[aTId]);
-  const allTeams=data.tournaments.flatMap(x=>x.divisions.flatMap(d=>d.teams.map(tm=>({...tm,divisionId:d.id,gradeId:d.gradeId,gender:d.gender,tournament:x,division:d}))));
-  const filtered=search.length>1?allTeams.filter(x=>x.name.toLowerCase().includes(search.toLowerCase())):[];
-  const aDivObj=t?.divisions.find(d=>d.id===aDiv);
-  const aDivIdx=t?.divisions.indexOf(aDivObj);
+// ─── ADMIN LOGIN ──────────────────────────────────────────────────────────────
+const ADMIN_PASSWORD = "Shoebox2026!";
+function AdminLogin({onSuccess}) {
+  const [pw,setPw]=useState(""); const [err,setErr]=useState(false); const [show,setShow]=useState(false);
+  const attempt=()=>{ if(pw===ADMIN_PASSWORD){onSuccess();}else{setErr(true);setPw("");setTimeout(()=>setErr(false),2000);} };
   return (
-    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:460,margin:"0 auto"}}>
-      <div style={{background:`linear-gradient(180deg,${C.navyMid},${C.navy})`,padding:"28px 18px 20px",textAlign:"center",borderBottom:`1px solid ${C.grayL}`}}>
-        <Logo sz={48} txt/>
-        <div style={{color:C.sky,fontSize:11,marginTop:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase"}}>Tournament Hub</div>
+    <div style={{minHeight:"100vh",background:C.navy,display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"'DM Sans',sans-serif"}}>
+      <div style={{background:C.navyMid,borderRadius:20,padding:36,width:360,maxWidth:"100%",border:`1px solid ${C.grayL}`,boxShadow:`0 20px 60px #00000066`}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <Logo sz={52} txt/>
+          <div style={{color:C.gray,fontSize:13,marginTop:14}}>Admin access only</div>
+        </div>
+        <div style={{marginBottom:14}}>
+          <div style={{color:C.gray,fontSize:11,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:8}}>Password</div>
+          <div style={{position:"relative"}}>
+            <input type={show?"text":"password"} value={pw}
+              onChange={e=>{setPw(e.target.value);setErr(false);}}
+              onKeyDown={e=>e.key==="Enter"&&attempt()}
+              placeholder="Enter admin password"
+              style={{width:"100%",background:C.navy,border:`2px solid ${err?C.red:C.grayL}`,borderRadius:10,
+                color:C.white,fontSize:15,padding:"13px 44px 13px 16px",outline:"none",
+                boxSizing:"border-box",fontFamily:"inherit",transition:"border-color 0.2s"}}/>
+            <button onClick={()=>setShow(s=>!s)}
+              style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",
+                background:"transparent",border:"none",color:C.gray,cursor:"pointer",fontSize:16}}>
+              {show?"🙈":"👁"}
+            </button>
+          </div>
+          {err&&<div style={{color:C.red,fontSize:12,marginTop:6,fontWeight:600}}>Incorrect password. Try again.</div>}
+        </div>
+        <Btn v="pri" onClick={attempt} sx={{width:"100%",padding:"13px 0",fontSize:15}}>Sign In to Admin</Btn>
+        <div style={{textAlign:"center",marginTop:16}}>
+          <span style={{color:C.gray,fontSize:12}}>Not an admin? </span>
+          <a href="/" style={{color:C.sky,fontSize:12,fontWeight:700,textDecoration:"none"}}>Go to Public Site →</a>
+        </div>
       </div>
-      <div style={{padding:14}}>
-        {data.tournaments.length>1&&<div style={{marginBottom:14,display:"flex",gap:8,overflowX:"auto"}}>
-          {data.tournaments.map(x=><button key={x.id} onClick={()=>setATId(x.id)} style={{padding:"7px 14px",borderRadius:50,border:`1px solid ${aTId===x.id?C.sky:C.grayL}`,background:aTId===x.id?C.sky+"22":"transparent",color:aTId===x.id?C.sky:C.gray,cursor:"pointer",fontWeight:700,fontSize:12,whiteSpace:"nowrap"}}>{x.name}</button>)}
-        </div>}
-        <Card sx={{marginBottom:14}}>
-          <Ttl sub="Search your team">Find My Team</Ttl>
+    </div>
+  );
+}
+
+// ─── PUBLIC HOME PAGE ─────────────────────────────────────────────────────────
+function PublicHome({data, onSelectTournament, logoUrl}) {
+  const active   = data.tournaments.filter(t=>t.status==="active");
+  const upcoming = data.tournaments.filter(t=>t.status==="upcoming");
+  const past     = data.tournaments.filter(t=>t.status==="complete");
+
+  const TCard=({t})=>{
+    const dates=tDates(t);
+    const totalTeams=t.divisions.reduce((s,d)=>s+d.teams.length,0);
+    const isLive=t.status==="active";
+    const isUpcoming=t.status==="upcoming";
+    return (
+      <div onClick={()=>onSelectTournament(t.id)}
+        style={{background:C.navyMid,borderRadius:16,border:`1px solid ${isLive?C.green+"66":C.grayL}`,
+          padding:20,marginBottom:14,cursor:"pointer",
+          boxShadow:isLive?`0 0 20px ${C.green}22`:"0 2px 12px #00000033",
+          transition:"transform 0.15s",userSelect:"none"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+          <div style={{flex:1,paddingRight:10}}>
+            <div style={{color:C.white,fontWeight:900,fontSize:19,
+              fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"-0.01em",marginBottom:5}}>
+              {t.name}
+            </div>
+            <div style={{color:C.gray,fontSize:13,marginBottom:4}}>
+              📅 {dates.map(fmtD).join(" → ")}
+            </div>
+            <div style={{color:C.gray,fontSize:12}}>📍 {t.location}</div>
+          </div>
+          <Badge c={isLive?C.green:isUpcoming?C.gold:C.gray}>
+            {isLive?"● Live":isUpcoming?"Upcoming":"Complete"}
+          </Badge>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+          paddingTop:12,borderTop:`1px solid ${C.grayL}`}}>
+          <div style={{color:C.gray,fontSize:12}}>
+            🏀 {totalTeams} teams · {t.divisions.length} division{t.divisions.length!==1?"s":""}
+          </div>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            {t.divisions.slice(0,4).map((d,i)=>(
+              <Badge key={d.id} c={dc(i)}>{dshort(d.gradeId,d.gender)}</Badge>
+            ))}
+            {t.divisions.length>4&&<Badge c={C.gray}>+{t.divisions.length-4}</Badge>}
+          </div>
+        </div>
+        <div style={{marginTop:12,color:C.sky,fontSize:12,fontWeight:700,textAlign:"right"}}>
+          View Schedule & Scores →
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
+      {/* Hero Header */}
+      <div style={{background:`linear-gradient(160deg,${C.navyLight} 0%,${C.navy} 100%)`,
+        padding:"40px 20px 32px",textAlign:"center",
+        borderBottom:`1px solid ${C.grayL}`}}>
+        {/* Logo — custom if set, otherwise SVG default */}
+        {logoUrl ? (
+          <img src={logoUrl} alt="Shoebox Sports"
+            style={{maxWidth:240,maxHeight:140,objectFit:"contain",marginBottom:16,display:"block",margin:"0 auto 16px"}}
+            onError={e=>{e.target.style.display="none";}}
+          />
+        ) : (
+          <div style={{display:"flex",justifyContent:"center",marginBottom:16}}>
+            <Logo sz={52} txt/>
+          </div>
+        )}
+        <div style={{color:C.sky,fontSize:12,fontWeight:700,letterSpacing:"0.12em",
+          textTransform:"uppercase",marginTop:8}}>Tournament Hub</div>
+        <div style={{color:C.gray,fontSize:13,marginTop:6}}>
+          Fenton, MI · Youth Basketball
+        </div>
+      </div>
+
+      <div style={{padding:"20px 16px"}}>
+        {/* Live tournaments */}
+        {active.length>0&&<>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:C.green,
+              boxShadow:`0 0 8px ${C.green}`}}/>
+            <div style={{color:C.green,fontWeight:800,fontSize:13,textTransform:"uppercase",
+              letterSpacing:"0.08em",fontFamily:"'Barlow Condensed',sans-serif"}}>Happening Now</div>
+          </div>
+          {active.map(t=><TCard key={t.id} t={t}/>)}
+        </>}
+
+        {/* Upcoming tournaments */}
+        {upcoming.length>0&&<>
+          <div style={{color:C.gold,fontWeight:800,fontSize:13,textTransform:"uppercase",
+            letterSpacing:"0.08em",fontFamily:"'Barlow Condensed',sans-serif",
+            marginBottom:14,marginTop:active.length>0?20:0}}>Upcoming Tournaments</div>
+          {upcoming.map(t=><TCard key={t.id} t={t}/>)}
+        </>}
+
+        {/* Past tournaments */}
+        {past.length>0&&<>
+          <div style={{color:C.gray,fontWeight:800,fontSize:13,textTransform:"uppercase",
+            letterSpacing:"0.08em",fontFamily:"'Barlow Condensed',sans-serif",
+            marginBottom:14,marginTop:20}}>Past Tournaments</div>
+          {past.map(t=><TCard key={t.id} t={t}/>)}
+        </>}
+
+        {data.tournaments.length===0&&(
+          <div style={{textAlign:"center",padding:"60px 0"}}>
+            <div style={{fontSize:44,marginBottom:14}}>🏀</div>
+            <div style={{color:C.white,fontWeight:800,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
+              No Tournaments Yet
+            </div>
+            <div style={{color:C.gray,fontSize:14}}>Check back soon for upcoming events!</div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{textAlign:"center",padding:"30px 0 20px",borderTop:`1px solid ${C.grayL}`,marginTop:20}}>
+          <div style={{color:C.gray,fontSize:12}}>© 2026 Shoebox Sports · Fenton, MI</div>
+          <a href="https://theshoeboxsports.com" style={{color:C.sky,fontSize:12,marginTop:4,display:"block",textDecoration:"none"}}>
+            theshoeboxsports.com
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── PUBLIC TOURNAMENT DETAIL ─────────────────────────────────────────────────
+function PublicTournament({tournament, onBack}) {
+  const [aDiv,setADiv]=useState(tournament.divisions[0]?.id);
+  const [search,setSearch]=useState("");
+  const [selTeam,setSelTeam]=useState(null);
+  const [tab,setTab]=useState("schedule");
+  const aDivObj=tournament.divisions.find(d=>d.id===aDiv);
+  const aDivIdx=tournament.divisions.indexOf(aDivObj);
+  const dates=tDates(tournament);
+  const allTeams=tournament.divisions.flatMap(d=>d.teams.map(tm=>({...tm,division:d})));
+  const filtered=search.length>1?allTeams.filter(x=>x.name.toLowerCase().includes(search.toLowerCase())):[];
+
+  const tabs=[{id:"schedule",l:"Schedule"},{id:"standings",l:"Standings"},{id:"bracket",l:"Bracket"}];
+
+  return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
+      {/* Header */}
+      <div style={{background:`linear-gradient(160deg,${C.navyLight},${C.navyMid})`,
+        padding:"20px 16px 0",borderBottom:`1px solid ${C.grayL}`}}>
+        <button onClick={onBack}
+          style={{background:"transparent",border:"none",color:C.sky,cursor:"pointer",
+            fontSize:13,fontWeight:700,marginBottom:14,padding:0,display:"flex",alignItems:"center",gap:6}}>
+          ← Back to Tournaments
+        </button>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+          <div>
+            <div style={{color:C.white,fontWeight:900,fontSize:22,
+              fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"-0.01em"}}>{tournament.name}</div>
+            <div style={{color:C.gray,fontSize:12,marginTop:4}}>
+              📅 {dates.map(fmtD).join(" → ")} · 📍 {tournament.location}
+            </div>
+          </div>
+          <Badge c={tournament.status==="active"?C.green:tournament.status==="upcoming"?C.gold:C.gray}>
+            {tournament.status==="active"?"● Live":tournament.status==="upcoming"?"Upcoming":"Complete"}
+          </Badge>
+        </div>
+        {/* Tabs */}
+        <div style={{display:"flex",gap:2}}>
+          {tabs.map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{
+              padding:"9px 16px",background:tab===t.id?C.sky:"transparent",
+              color:tab===t.id?"#fff":C.gray,border:"none",borderRadius:"8px 8px 0 0",
+              cursor:"pointer",fontWeight:800,fontSize:13,
+              fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase"}}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{padding:"16px"}}>
+        {/* Team search — always visible */}
+        <Card sx={{marginBottom:16}}>
           <div style={{position:"relative"}}>
             <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",color:C.gray}}>🔍</span>
-            <input placeholder="Search team name..." value={search} onChange={e=>{setSearch(e.target.value);setSelTeam(null);}}
-              style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:10,color:C.white,
-                fontSize:14,padding:"11px 14px 11px 40px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+            <input placeholder="Search your team..." value={search}
+              onChange={e=>{setSearch(e.target.value);setSelTeam(null);}}
+              style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:10,
+                color:C.white,fontSize:14,padding:"11px 14px 11px 40px",
+                outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
           </div>
-          {filtered.length>0&&<div style={{marginTop:8,borderRadius:10,overflow:"hidden",border:`1px solid ${C.grayL}`}}>
-            {filtered.map((x,i)=>(
-              <div key={`${x.id}-${x.divisionId}`} onClick={()=>{setSelTeam(x);setSearch("");}}
-                style={{padding:"12px 14px",cursor:"pointer",background:C.navy,color:C.white,fontSize:14,fontWeight:600,
-                  borderTop:i>0?`1px solid ${C.grayL}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                🏀 {x.name}
-                <div style={{display:"flex",gap:6}}><Badge c={dc(x.tournament.divisions.indexOf(x.division))}>{dshort(x.gradeId,x.gender)}</Badge><span style={{color:C.gray,fontSize:11}}>Pool {x.pool}</span></div>
-              </div>
-            ))}
-          </div>}
+          {filtered.length>0&&(
+            <div style={{marginTop:8,borderRadius:10,overflow:"hidden",border:`1px solid ${C.grayL}`}}>
+              {filtered.map((x,i)=>(
+                <div key={`${x.id}-${x.division.id}`}
+                  onClick={()=>{setSelTeam(x);setSearch("");}}
+                  style={{padding:"12px 14px",cursor:"pointer",background:C.navy,color:C.white,
+                    fontSize:14,fontWeight:600,borderTop:i>0?`1px solid ${C.grayL}`:"none",
+                    display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  🏀 {x.name}
+                  <div style={{display:"flex",gap:6}}>
+                    <Badge c={dc(tournament.divisions.indexOf(x.division))}>{dshort(x.division.gradeId,x.division.gender)}</Badge>
+                    <span style={{color:C.gray,fontSize:11}}>Pool {x.pool}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
 
+        {/* Selected team games */}
         {selTeam&&(()=>{
-          const tn=selTeam.tournament, div=selTeam.division, col=dc(tn.divisions.indexOf(div));
-          const dates=tDates(tn);
-          const games=tn.games.filter(g=>g.divisionId===div.id&&(g.homeId===selTeam.id||g.awayId===selTeam.id)&&g.court);
+          const div=selTeam.division, col=dc(tournament.divisions.indexOf(div));
+          const games=tournament.games.filter(g=>g.divisionId===div.id&&(g.homeId===selTeam.id||g.awayId===selTeam.id)&&g.court);
           return (
-            <Card sx={{marginBottom:14,border:`1px solid ${col}44`}}>
+            <Card sx={{marginBottom:16,border:`1px solid ${col}44`}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:14}}>
                 <div>
                   <Badge c={col} sx={{marginBottom:6}}>{dlabel(div.gradeId,div.gender)}</Badge>
-                  <div style={{color:C.white,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif",marginTop:5}}>{selTeam.name}</div>
+                  <div style={{color:C.white,fontWeight:800,fontSize:18,
+                    fontFamily:"'Barlow Condensed',sans-serif",marginTop:5}}>{selTeam.name}</div>
                 </div>
-                <button onClick={()=>setSelTeam(null)} style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,borderRadius:8,padding:"6px 11px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+                <button onClick={()=>setSelTeam(null)}
+                  style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
+                    borderRadius:8,padding:"6px 11px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
                 {[{l:"Wins",v:selTeam.wins,c:C.green},{l:"Losses",v:selTeam.losses,c:C.red}].map(({l,v,c})=>(
@@ -1380,20 +1705,23 @@ function Player({data}) {
                 const isH=game.homeId===selTeam.id, mySc=isH?game.homeScore:game.awayScore, oppSc=isH?game.awayScore:game.homeScore;
                 const won=mySc!==null&&mySc>oppSc;
                 return (
-                  <div key={game.id} style={{background:C.navy,borderRadius:12,padding:"13px 14px",marginBottom:7,border:`1px solid ${game.phase==="bracket"?col+"55":C.grayL}`}}>
+                  <div key={game.id} style={{background:C.navy,borderRadius:12,padding:"13px 14px",marginBottom:7,
+                    border:`1px solid ${game.phase==="bracket"?col+"55":C.grayL}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:7}}>
                       <span style={{color:C.sky,fontWeight:800,fontSize:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
                         {game.dayIdx!==undefined?fmtD(dates[game.dayIdx]):"—"} · {game.time} · {game.court}
                       </span>
                       {game.phase==="pool"?<Badge c={C.gold}>Pool {game.pool}</Badge>:<Badge c={col}>{game.round}</Badge>}
                     </div>
-                    <div style={{color:C.gray,fontSize:13}}>vs <span style={{color:C.white,fontWeight:700}}>{tname(tn.divisions,isH?game.awayId:game.homeId)}</span></div>
-                    {game.status==="final"?<div style={{display:"flex",alignItems:"center",gap:10,marginTop:9}}>
-                      <span style={{fontSize:26,fontWeight:900,color:won?C.green:C.red,fontFamily:"'Barlow Condensed',sans-serif"}}>{mySc}</span>
-                      <span style={{color:C.gray}}>–</span>
-                      <span style={{fontSize:26,fontWeight:900,color:C.white,fontFamily:"'Barlow Condensed',sans-serif"}}>{oppSc}</span>
-                      <Badge c={won?C.green:C.red}>{won?"WIN":"LOSS"}</Badge>
-                    </div>:<div style={{marginTop:7}}><Badge c={C.gold}>Upcoming</Badge></div>}
+                    <div style={{color:C.gray,fontSize:13}}>vs <span style={{color:C.white,fontWeight:700}}>{tname(tournament.divisions,isH?game.awayId:game.homeId)}</span></div>
+                    {game.status==="final"?(
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginTop:9}}>
+                        <span style={{fontSize:26,fontWeight:900,color:won?C.green:C.red,fontFamily:"'Barlow Condensed',sans-serif"}}>{mySc}</span>
+                        <span style={{color:C.gray}}>–</span>
+                        <span style={{fontSize:26,fontWeight:900,color:C.white,fontFamily:"'Barlow Condensed',sans-serif"}}>{oppSc}</span>
+                        <Badge c={won?C.green:C.red}>{won?"WIN":"LOSS"}</Badge>
+                      </div>
+                    ):<div style={{marginTop:7}}><Badge c={C.gold}>Upcoming</Badge></div>}
                   </div>
                 );
               })}
@@ -1401,46 +1729,134 @@ function Player({data}) {
           );
         })()}
 
-        {t&&<Card sx={{marginBottom:14}}>
-          <Ttl>Standings by Division</Ttl>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
-            {t.divisions.map((d,i)=><button key={d.id} onClick={()=>setADiv(d.id)} style={{padding:"6px 11px",borderRadius:8,border:`1px solid ${aDiv===d.id?dc(i):C.grayL}`,background:aDiv===d.id?dc(i)+"22":"transparent",color:aDiv===d.id?dc(i):C.gray,cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"'Barlow Condensed',sans-serif"}}>{dshort(d.gradeId,d.gender)}</button>)}
-          </div>
-          {aDivObj&&[...new Set(aDivObj.teams.map(t=>t.pool))].sort().map(pool=>(
-            <div key={pool} style={{marginBottom:14}}>
-              <div style={{color:C.gold,fontWeight:800,fontSize:11,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8,fontFamily:"'Barlow Condensed',sans-serif"}}>Pool {pool}</div>
-              {poolSort(aDivObj.teams,pool).map((tm,i)=>(
-                <div key={tm.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderTop:i>0?`1px solid ${C.grayL}`:"none"}}>
-                  <div style={{width:26,height:26,borderRadius:"50%",background:i===0?C.gold:i===1?`linear-gradient(135deg,${C.sky},${C.light})`:C.grayL,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:C.navy,flexShrink:0}}>{i===0?"★":i===1?"▲":i+1}</div>
-                  <div style={{flex:1,color:C.white,fontSize:13,fontWeight:600}}>{tm.name}</div>
-                  <span style={{color:C.green,fontWeight:800,fontSize:13}}>{tm.wins}W</span>
-                  <span style={{color:C.red,fontWeight:800,fontSize:13}}>{tm.losses}L</span>
-                </div>
+        {/* ── SCHEDULE TAB ── */}
+        {tab==="schedule"&&(()=>{
+          const scheduled=[...tournament.games].filter(g=>g.court&&g.time).sort((a,b)=>a.dayIdx-b.dayIdx||toMins(a.time)-toMins(b.time));
+          return (
+            <div>
+              {dates.map((date,di)=>{
+                const dg=scheduled.filter(g=>g.dayIdx===di); if(!dg.length) return null;
+                return (
+                  <div key={di} style={{marginBottom:22}}>
+                    <div style={{color:C.gold,fontWeight:800,fontSize:13,textTransform:"uppercase",
+                      letterSpacing:"0.08em",fontFamily:"'Barlow Condensed',sans-serif",marginBottom:12}}>{fmtD(date)}</div>
+                    {dg.map(game=>{
+                      const div=tournament.divisions.find(d=>d.id===game.divisionId);
+                      const col=div?dc(tournament.divisions.indexOf(div)):C.gray;
+                      return (
+                        <div key={game.id} style={{background:C.navyMid,borderRadius:12,padding:"13px 16px",
+                          marginBottom:8,border:`1px solid ${C.grayL}`}}>
+                          <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                            <span style={{color:C.sky,fontWeight:800,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                              {game.time} · {game.court}
+                            </span>
+                            <div style={{display:"flex",gap:4}}>
+                              {div&&<Badge c={col}>{dshort(div.gradeId,div.gender)}</Badge>}
+                              {game.phase==="pool"?<Badge c={C.gold}>Pool {game.pool}</Badge>:<Badge c={C.light}>{game.round}</Badge>}
+                            </div>
+                          </div>
+                          <div style={{color:C.white,fontWeight:700,fontSize:14}}>
+                            {tname(tournament.divisions,game.homeId)}
+                            <span style={{color:C.gray,margin:"0 8px",fontWeight:400}}>vs</span>
+                            {tname(tournament.divisions,game.awayId)}
+                          </div>
+                          {game.status==="final"&&(
+                            <div style={{marginTop:8,display:"flex",alignItems:"center",gap:10}}>
+                              <span style={{fontSize:22,fontWeight:900,color:C.white,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                                {game.homeScore} – {game.awayScore}
+                              </span>
+                              <Badge c={C.green}>Final</Badge>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+              {scheduled.length===0&&<div style={{textAlign:"center",padding:"40px 0",color:C.gray}}>Schedule not yet posted</div>}
+            </div>
+          );
+        })()}
+
+        {/* ── STANDINGS TAB ── */}
+        {tab==="standings"&&(
+          <div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+              {tournament.divisions.map((d,i)=>(
+                <button key={d.id} onClick={()=>setADiv(d.id)} style={{padding:"6px 11px",borderRadius:8,
+                  border:`1px solid ${aDiv===d.id?dc(i):C.grayL}`,background:aDiv===d.id?dc(i)+"22":"transparent",
+                  color:aDiv===d.id?dc(i):C.gray,cursor:"pointer",fontWeight:700,fontSize:12,
+                  fontFamily:"'Barlow Condensed',sans-serif"}}>{dshort(d.gradeId,d.gender)}</button>
               ))}
             </div>
-          ))}
-        </Card>}
-
-        {t&&<Card sx={{marginBottom:28}}>
-          <Ttl sub="Championship games">Bracket</Ttl>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
-            {t.divisions.map((d,i)=><button key={d.id} onClick={()=>setADiv(d.id)} style={{padding:"6px 11px",borderRadius:8,border:`1px solid ${aDiv===d.id?dc(i):C.grayL}`,background:aDiv===d.id?dc(i)+"22":"transparent",color:aDiv===d.id?dc(i):C.gray,cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"'Barlow Condensed',sans-serif"}}>{dshort(d.gradeId,d.gender)}</button>)}
+            {aDivObj&&[...new Set(aDivObj.teams.map(t=>t.pool))].sort().map(pool=>(
+              <Card key={pool} sx={{marginBottom:14}}>
+                <div style={{color:C.gold,fontWeight:800,fontSize:12,textTransform:"uppercase",
+                  letterSpacing:"0.08em",marginBottom:12,fontFamily:"'Barlow Condensed',sans-serif"}}>Pool {pool}</div>
+                {poolSort(aDivObj.teams,pool).map((tm,i)=>(
+                  <div key={tm.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",
+                    borderTop:i>0?`1px solid ${C.grayL}`:"none"}}>
+                    <div style={{width:26,height:26,borderRadius:"50%",flexShrink:0,
+                      background:i===0?C.gold:i===1?`linear-gradient(135deg,${C.sky},${C.light})`:C.grayL,
+                      display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:900,color:C.navy}}>
+                      {i===0?"★":i===1?"▲":i+1}
+                    </div>
+                    <div style={{flex:1,color:C.white,fontSize:13,fontWeight:600}}>{tm.name}</div>
+                    <span style={{color:C.green,fontWeight:800,fontSize:13}}>{tm.wins}W</span>
+                    <span style={{color:C.red,fontWeight:800,fontSize:13,marginLeft:8}}>{tm.losses}L</span>
+                  </div>
+                ))}
+              </Card>
+            ))}
           </div>
-          {t.games.filter(g=>g.divisionId===aDiv&&g.phase==="bracket"&&g.court).map(game=>{
-            const col=dc(aDivIdx);
-            return (
-              <div key={game.id} style={{background:C.navy,borderRadius:12,padding:"13px 14px",marginBottom:7,border:`1px solid ${game.round==="Final"?C.gold+"66":C.grayL}`}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:7}}>
-                  <span style={{color:C.sky,fontWeight:800,fontSize:12,fontFamily:"'Barlow Condensed',sans-serif"}}>{game.time} · {game.court}</span>
-                  <Badge c={game.round==="Final"?C.gold:col}>{game.round}</Badge>
-                </div>
-                <div style={{color:C.white,fontWeight:700,fontSize:13}}>{tname(t.divisions,game.homeId)} <span style={{color:C.gray,fontWeight:400}}>vs</span> {tname(t.divisions,game.awayId)}</div>
-                {game.status==="final"&&<div style={{marginTop:7,fontWeight:900,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",color:C.gold}}>{game.homeScore} – {game.awayScore}</div>}
+        )}
+
+        {/* ── BRACKET TAB ── */}
+        {tab==="bracket"&&(
+          <div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+              {tournament.divisions.map((d,i)=>(
+                <button key={d.id} onClick={()=>setADiv(d.id)} style={{padding:"6px 11px",borderRadius:8,
+                  border:`1px solid ${aDiv===d.id?dc(i):C.grayL}`,background:aDiv===d.id?dc(i)+"22":"transparent",
+                  color:aDiv===d.id?dc(i):C.gray,cursor:"pointer",fontWeight:700,fontSize:12,
+                  fontFamily:"'Barlow Condensed',sans-serif"}}>{dshort(d.gradeId,d.gender)}</button>
+              ))}
+            </div>
+            {tournament.games.filter(g=>g.divisionId===aDiv&&g.phase==="bracket"&&g.court).map(game=>{
+              const col=dc(aDivIdx);
+              return (
+                <Card key={game.id} sx={{marginBottom:10,border:`1px solid ${game.round==="Final"?C.gold+"66":C.grayL}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                    <span style={{color:C.sky,fontWeight:800,fontSize:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                      {fmtD(dates[game.dayIdx])} · {game.time} · {game.court}
+                    </span>
+                    <Badge c={game.round==="Final"?C.gold:col}>{game.round}</Badge>
+                  </div>
+                  <div style={{color:C.white,fontWeight:700,fontSize:15}}>
+                    {tname(tournament.divisions,game.homeId)}
+                    <span style={{color:C.gray,margin:"0 8px",fontWeight:400}}>vs</span>
+                    {tname(tournament.divisions,game.awayId)}
+                  </div>
+                  {game.status==="final"&&(
+                    <div style={{marginTop:10,fontWeight:900,fontSize:22,
+                      fontFamily:"'Barlow Condensed',sans-serif",color:C.gold}}>
+                      {game.homeScore} – {game.awayScore}
+                      {game.round==="Final"&&<span style={{fontSize:16,marginLeft:10}}>🏆 Champions</span>}
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
+            {tournament.games.filter(g=>g.divisionId===aDiv&&g.phase==="bracket").every(g=>!g.court)&&(
+              <div style={{textAlign:"center",padding:"40px 0",color:C.gray}}>
+                Bracket will be posted after pool play
               </div>
-            );
-          })}
-          {t.games.filter(g=>g.divisionId===aDiv&&g.phase==="bracket").length===0&&<div style={{color:C.gray,fontSize:13,textAlign:"center",padding:"10px 0"}}>Bracket games not yet scheduled</div>}
-        </Card>}
+            )}
+          </div>
+        )}
+
+        <div style={{height:40}}/>
       </div>
     </div>
   );
@@ -1448,60 +1864,83 @@ function Player({data}) {
 
 // ─── ROOT ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [mode,setMode] = useState("admin");
-  const [data,setData] = useState(()=>buildSeed());
+  const [data,setData]           = useState(()=>buildSeed());
+  const [adminAuth,setAdminAuth] = useState(false);
+  const [showAdminLogin,setShowAdminLogin] = useState(false);
+  const [selectedTId,setSelectedTId]       = useState(null);
+  const [logoUrl,setLogoUrl]               = useState("");
+
   useEffect(()=>{
     const l=document.createElement("link");
     l.href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=DM+Sans:wght@400;500;600;700;800&display=swap";
     l.rel="stylesheet"; document.head.appendChild(l);
   },[]);
+
   const onScore=(gId,h,a)=>setData(d=>({
     ...d,
     tournaments: d.tournaments.map(t=>{
-      // 1. Mark game final
-      const gamesAfterScore = t.games.map(g=>
-        g.id===gId ? {...g, homeScore:h, awayScore:a, status:"final"} : g
-      );
-      // 2. Rebuild standings for every division from all final pool games
-      const divisions = t.divisions.map(div=>{
-        const teams = div.teams.map(tm=>({...tm, wins:0, losses:0, pf:0, pa:0}));
-        gamesAfterScore
-          .filter(g=>g.divisionId===div.id&&g.phase==="pool"&&g.status==="final")
-          .forEach(g=>{
-            const ht=teams.find(x=>x.id===g.homeId);
-            const at=teams.find(x=>x.id===g.awayId);
-            if(!ht||!at) return;
-            ht.pf+=g.homeScore; ht.pa+=g.awayScore;
-            at.pf+=g.awayScore; at.pa+=g.homeScore;
-            if(g.homeScore>g.awayScore){ht.wins++;at.losses++;}
-            else{at.wins++;ht.losses++;}
-          });
-        return {...div, teams};
+      const gamesAfterScore=t.games.map(g=>g.id===gId?{...g,homeScore:h,awayScore:a,status:"final"}:g);
+      const divisions=t.divisions.map(div=>{
+        const teams=div.teams.map(tm=>({...tm,wins:0,losses:0,pf:0,pa:0}));
+        gamesAfterScore.filter(g=>g.divisionId===div.id&&g.phase==="pool"&&g.status==="final").forEach(g=>{
+          const ht=teams.find(x=>x.id===g.homeId), at=teams.find(x=>x.id===g.awayId);
+          if(!ht||!at) return;
+          ht.pf+=g.homeScore; ht.pa+=g.awayScore; at.pf+=g.awayScore; at.pa+=g.homeScore;
+          if(g.homeScore>g.awayScore){ht.wins++;at.losses++;}else{at.wins++;ht.losses++;}
+        });
+        return {...div,teams};
       });
-      // 3. Auto-seed bracket from updated standings
-      const gamesSeeded = seedBracket(divisions, gamesAfterScore);
-      return {...t, divisions, games:gamesSeeded};
+      return {...t,divisions,games:seedBracket(divisions,gamesAfterScore)};
     })
   }));
   const onUpdateGames=(tId,games)=>setData(d=>({...d,tournaments:d.tournaments.map(t=>t.id===tId?{...t,games}:t)}));
   const onAdd=t=>setData(d=>({...d,tournaments:[...d.tournaments,t]}));
+
+  // Admin login screen
+  if (showAdminLogin && !adminAuth) {
+    return <AdminLogin onSuccess={()=>{setAdminAuth(true);setShowAdminLogin(false);}}/>;
+  }
+
+  // Admin dashboard (password protected)
+  if (adminAuth) {
+    return (
+      <div style={{background:C.navy,minHeight:"100vh"}}>
+        <Admin data={data} onScore={onScore} onUpdateGames={onUpdateGames} onAdd={onAdd} logoUrl={logoUrl} onSaveLogoUrl={setLogoUrl}/>
+        {/* Admin logout button */}
+        <button onClick={()=>setAdminAuth(false)}
+          style={{position:"fixed",bottom:18,right:18,zIndex:999,
+            background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:50,
+            padding:"8px 18px",color:C.gray,cursor:"pointer",fontWeight:700,fontSize:12,
+            fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.06em",
+            boxShadow:`0 4px 20px #00000055`}}>
+          🔒 Sign Out
+        </button>
+      </div>
+    );
+  }
+
+  // Public: tournament detail
+  if (selectedTId) {
+    const t=data.tournaments.find(x=>x.id===selectedTId);
+    if (t) return (
+      <div style={{background:C.navy,minHeight:"100vh"}}>
+        <PublicTournament tournament={t} onBack={()=>setSelectedTId(null)}/>
+      </div>
+    );
+  }
+
+  // Public: home page
   return (
     <div style={{background:C.navy,minHeight:"100vh"}}>
-      <div style={{position:"fixed",bottom:18,right:18,zIndex:999,display:"flex",gap:5,
-        background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:50,padding:4,
-        boxShadow:`0 6px 28px #00000055`}}>
-        {[{id:"admin",l:"⚙️ Admin"},{id:"player",l:"📱 Player"}].map(m=>(
-          <button key={m.id} onClick={()=>setMode(m.id)} style={{
-            padding:"7px 16px",borderRadius:50,border:"none",
-            background:mode===m.id?`linear-gradient(135deg,${C.sky},${C.navyLight})`:"transparent",
-            color:mode===m.id?"#fff":C.gray,cursor:"pointer",fontWeight:800,fontSize:12,
-            fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.06em",
-            textTransform:"uppercase",transition:"all 0.2s"}}>{m.l}</button>
-        ))}
+      <PublicHome data={data} onSelectTournament={id=>setSelectedTId(id)} logoUrl={logoUrl}/>
+      {/* Hidden admin access — small link in footer */}
+      <div style={{textAlign:"center",paddingBottom:20}}>
+        <button onClick={()=>setShowAdminLogin(true)}
+          style={{background:"transparent",border:"none",color:C.grayL,
+            cursor:"pointer",fontSize:11,fontFamily:"'DM Sans',sans-serif"}}>
+          Admin Login
+        </button>
       </div>
-      {mode==="admin"
-        ?<Admin data={data} onScore={onScore} onUpdateGames={onUpdateGames} onAdd={onAdd}/>
-        :<Player data={data}/>}
     </div>
   );
 }
