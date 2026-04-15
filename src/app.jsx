@@ -2516,10 +2516,16 @@ function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, 
 
   const dates = getUpcomingDates(28);
   const selDateObj = dates.find(d=>dateKey(d)===selDate) || new Date(selDate+"T12:00:00");
+  const selDow = DAYS_OF_WEEK[selDateObj.getDay()];
   const allSlots = isWeekend(selDateObj) ? WEEKEND_SLOTS : WEEKDAY_SLOTS;
   const todayBookings = bookings.filter(b=>b.date===selDate&&b.status!=="cancelled");
   const blockedSlots = (localSched?.blocked||[]).filter(b=>b.date===selDate).map(b=>b.time);
   const bookedSlots = todayBookings.map(b=>b.time);
+  // Group slots for this day of week
+  const groupSlotsToday = (localSched?.groupSlots||[]).filter(gs=>{
+    if(!gs.endDate||new Date(gs.endDate+"T23:59:59")<new Date()) return false;
+    return gs.day===selDow;
+  });
 
   const toggleBlock = async(date,time) => {
     const blocked=[...(localSched.blocked||[])];
@@ -2668,11 +2674,25 @@ function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, 
           {allSlots.map(slot=>{
             const booking = todayBookings.find(b=>b.time===slot);
             const isBlocked = blockedSlots.includes(slot);
+            const groupSlot = groupSlotsToday.find(gs=>gs.time===slot);
             return (
               <div key={slot} style={{display:"flex",gap:12,alignItems:"stretch",marginBottom:8}}>
                 <div style={{width:70,flexShrink:0,color:C.gold,fontWeight:700,fontSize:12,
                   fontFamily:"'Barlow Condensed',sans-serif",paddingTop:14}}>{slot}</div>
-                {booking?(
+                {groupSlot?(
+                  <div style={{flex:1,background:C.sky+"11",borderRadius:10,padding:"12px 16px",
+                    border:`1px solid ${C.sky}44`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div>
+                        <div style={{color:C.sky,fontWeight:700,fontSize:14}}>👥 {groupSlot.name}</div>
+                        <div style={{color:C.gray,fontSize:12,marginTop:2}}>
+                          Group Session · {(groupSlot.registrants||[]).length}/{groupSlot.maxPlayers} players
+                        </div>
+                      </div>
+                      <Badge c={C.sky}>Group</Badge>
+                    </div>
+                  </div>
+                ):booking?(
                   <div style={{flex:1,background:C.navyMid,borderRadius:10,padding:"12px 16px",
                     border:`1px solid ${C.sky}44`}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:8}}>
@@ -4353,7 +4373,8 @@ function GroupCreateForm({schedule, localSched, setLocalSched, onUpdateSchedule,
   const [gf, setGf] = useState({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});
   const PRESETS = ["HS Boys","HS Girls","MS Boys","MS Girls","Custom..."];
   const allDays = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-  const allTimes = [...WEEKDAY_SLOTS,...WEEKEND_SLOTS].filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>toMins(a)-toMins(b));
+  // 15-min increments from 6:00 AM to 9:00 PM
+  const allTimes = buildSlots("6:00 AM", 61, 15);
   const reset = () => { setShow(false); setGf({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""}); };
   const src = isCoach ? schedule : localSched;
   const save = async(ns) => {
@@ -4513,18 +4534,33 @@ function GroupSlotCard({gs, gi, schedule, onUpdateSchedule, showRemove, localSch
 
 // ─── PUBLIC BOOKING FORM ──────────────────────────────────────────────────────
 function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
-  const [step, setStep]           = useState(1);
-  const [session, setSession]     = useState(null);
-  const [selections, setSelections] = useState([]); // [{date, dateObj, time}]
-  const [activeDate, setActiveDate] = useState(null); // dateObj currently picking time for
-  const [form, setForm]           = useState({name:"",email:"",phone:"",payMethod:"online"});
-  const [submitted, setSubmitted] = useState(false);
+  const [step, setStep]             = useState(1);
+  const [session, setSession]       = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState(null); // for group session
+  const [selections, setSelections] = useState([]);
+  const [activeDate, setActiveDate] = useState(null);
+  const [form, setForm]             = useState({name:"",email:"",phone:"",payMethod:"online"});
+  const [submitted, setSubmitted]   = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors]       = useState({});
+  const [errors, setErrors]         = useState({});
   const upd = (k,v) => setForm(f=>({...f,[k]:v}));
 
   // 60 days out
   const dates = getUpcomingDates(60);
+
+  // Active (non-expired) groups from schedule
+  const activeGroups = (schedule?.groupSlots||[]).filter(gs=>{
+    if(!gs.endDate) return true;
+    return new Date(gs.endDate+"T23:59:59") >= new Date();
+  });
+
+  // Get group times that should be blocked on a given date (by day of week)
+  const getGroupBlockedTimes = (d) => {
+    const dow = DAYS_OF_WEEK[d.getDay()]; // e.g. "Monday"
+    return activeGroups
+      .filter(gs=>gs.day===dow)
+      .map(gs=>gs.time);
+  };
 
   const getSlotsForDate = (d) => {
     if(!d) return [];
@@ -4533,9 +4569,10 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
     let base = isWeekday(d) ? WEEKDAY_SLOTS : (schedule?.availability?.[DAYS_OF_WEEK[dow]]||[]);
     const blocked = (schedule?.blocked||[]).filter(b=>b.date===key).map(b=>b.time);
     const booked  = bookings.filter(b=>b.date===key&&b.status!=="cancelled").map(b=>b.time);
-    // Also remove times already selected in current booking
     const alreadyPicked = selections.filter(s=>s.date===key).map(s=>s.time);
-    return base.filter(s=>!blocked.includes(s)&&!booked.includes(s)&&!alreadyPicked.includes(s));
+    // Also block any times reserved for group sessions
+    const groupTimes = getGroupBlockedTimes(d);
+    return base.filter(s=>!blocked.includes(s)&&!booked.includes(s)&&!alreadyPicked.includes(s)&&!groupTimes.includes(s));
   };
 
   const toggleTime = (d, time) => {
@@ -4561,36 +4598,73 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
   const handleSubmit = async() => {
     if(!validate()) return;
     setSubmitting(true);
-    for(const sel of selections) {
+
+    if(session?.id==="group"&&selectedGroup) {
+      // Group session — register as a player in the group slot
+      const newReg = {name:form.name.trim(), phone:form.phone.trim(), email:form.email.trim()};
+      const updatedGroup = {...selectedGroup, registrants:[...(selectedGroup.registrants||[]),newReg]};
+      const newGroupSlots = (schedule?.groupSlots||[]).map(g=>g.id===selectedGroup.id?updatedGroup:g);
+      const ns = {...schedule, groupSlots:newGroupSlots};
+      await saveSchedule(ns);
+      // Also save a booking record so it appears in admin
       const booking = {
         id: Date.now()+Math.random(),
-        sessionId: session.id, sessionLabel: session.label, price: session.price,
-        date: sel.date, dateLabel: sel.dateLabel, time: sel.time,
-        clientName: form.name.trim(), clientEmail: form.email.trim(), clientPhone: form.phone.trim(),
-        payMethod: form.payMethod,
-        payStatus: form.payMethod==="inperson"?"pay_inperson":"unpaid",
-        status: "pending", bookedAt: new Date().toISOString(),
+        sessionId:"group", sessionLabel:`Group: ${selectedGroup.name}`, price:SESSIONS.find(s=>s.id==="group")?.price||50,
+        date:"recurring", dateLabel:`Every ${selectedGroup.day} at ${selectedGroup.time}`,
+        time:selectedGroup.time, groupId:selectedGroup.id, groupName:selectedGroup.name,
+        clientName:form.name.trim(), clientEmail:form.email.trim(), clientPhone:form.phone.trim(),
+        payMethod:form.payMethod, payStatus:form.payMethod==="inperson"?"pay_inperson":"unpaid",
+        status:"confirmed", bookedAt:new Date().toISOString(),
       };
-      await onSubmit(booking);
+      await onSubmit(booking, ns);
+      await sendEmail(EJS.adminTemplate,{
+        tournament_name:"Group Training Registration",
+        tournament_dates:`Every ${selectedGroup.day} at ${selectedGroup.time} (until ${fmtD(selectedGroup.endDate)})`,
+        location:"Shoebox Sports - Fenton, MI",
+        coach_name:form.name.trim(), coach_email:form.email.trim(), coach_phone:form.phone.trim(),
+        teams_list:`Group: ${selectedGroup.name}\nDay: Every ${selectedGroup.day} at ${selectedGroup.time}\nUntil: ${fmtD(selectedGroup.endDate)}\nPayment: ${form.payMethod==="online"?"Online (Clover)":"In Person"}`,
+        team_count:"1", submitted_at:new Date().toLocaleString(),
+      });
+      await sendEmail(EJS.coachTemplate,{
+        coach_name:form.name.trim(), coach_email:form.email.trim(),
+        tournament_name:`Group Training: ${selectedGroup.name}`,
+        tournament_dates:`Every ${selectedGroup.day} at ${selectedGroup.time}`,
+        location:"Shoebox Sports - Fenton, MI",
+        teams_list:`Group: ${selectedGroup.name}\nRecurring: Every ${selectedGroup.day} at ${selectedGroup.time}\nUntil: ${fmtD(selectedGroup.endDate)}\nPrice: $${SESSIONS.find(s=>s.id==="group")?.price||50}/session`,
+        team_count:"1",
+        payment_link:form.payMethod==="online"?PAYMENT_LINK:"Pay at your session",
+      });
+    } else {
+      // 1-on-1 or regular group by date/time
+      for(const sel of selections) {
+        const booking = {
+          id: Date.now()+Math.random(),
+          sessionId: session.id, sessionLabel: session.label, price: session.price,
+          date: sel.date, dateLabel: sel.dateLabel, time: sel.time,
+          clientName: form.name.trim(), clientEmail: form.email.trim(), clientPhone: form.phone.trim(),
+          payMethod: form.payMethod,
+          payStatus: form.payMethod==="inperson"?"pay_inperson":"unpaid",
+          status: "pending", bookedAt: new Date().toISOString(),
+        };
+        await onSubmit(booking);
+      }
+      const sessionList = selections.map(s=>`${s.dateLabel} at ${s.time}`).join(", ");
+      await sendEmail(EJS.adminTemplate,{
+        tournament_name:"Training Session Booking",
+        tournament_dates:sessionList, location:"Shoebox Sports - Fenton, MI",
+        coach_name:form.name.trim(), coach_email:form.email.trim(), coach_phone:form.phone.trim(),
+        teams_list:`Session: ${session.label} ($${session.price} each)\nDates: ${sessionList}\nPayment: ${form.payMethod==="online"?"Online (Clover)":"In Person"}`,
+        team_count:String(selections.length), submitted_at:new Date().toLocaleString(),
+      });
+      await sendEmail(EJS.coachTemplate,{
+        coach_name:form.name.trim(), coach_email:form.email.trim(),
+        tournament_name:`Training Sessions with ${COACH_NAME}`,
+        tournament_dates:sessionList, location:"Shoebox Sports - Fenton, MI",
+        teams_list:`Session type: ${session.label}\nSessions booked: ${selections.length}\nTotal: $${session.price*selections.length}\nDates: ${sessionList}`,
+        team_count:String(selections.length),
+        payment_link:form.payMethod==="online"?PAYMENT_LINK:"Pay at your session",
+      });
     }
-    // Email summary
-    const sessionList = selections.map(s=>`${s.dateLabel} at ${s.time}`).join(", ");
-    await sendEmail(EJS.adminTemplate,{
-      tournament_name:"Training Session Booking",
-      tournament_dates:sessionList,
-      location:"Shoebox Sports - Fenton, MI",
-      coach_name:form.name.trim(), coach_email:form.email.trim(), coach_phone:form.phone.trim(),
-      teams_list:`Session: ${session.label} ($${session.price} each)\nDates: ${sessionList}\nPayment: ${form.payMethod==="online"?"Online (Clover)":"In Person"}`,
-      team_count:String(selections.length), submitted_at:new Date().toLocaleString(),
-    });
-    await sendEmail(EJS.coachTemplate,{
-      coach_name:form.name.trim(), coach_email:form.email.trim(),
-      tournament_name:`Training Sessions with ${COACH_NAME}`,
-      tournament_dates:sessionList, location:"Shoebox Sports - Fenton, MI",
-      teams_list:`Session type: ${session.label}\nSessions booked: ${selections.length}\nTotal: $${session.price*selections.length}\nDates: ${sessionList}`,
-      team_count:String(selections.length),
-      payment_link:form.payMethod==="online"?PAYMENT_LINK:"Pay at your session",
-    });
     setSubmitting(false); setSubmitted(true);
   };
 
@@ -4601,32 +4675,53 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
       <div style={{padding:"50px 24px 24px",textAlign:"center"}}>
         <div style={{fontSize:48,marginBottom:12}}>✅</div>
         <div style={{color:C.green,fontWeight:900,fontSize:26,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
-          {selections.length>1?`${selections.length} Sessions Booked!`:"Session Booked!"}
+          {session?.id==="group"?`You've Joined ${selectedGroup?.name}!`:selections.length>1?`${selections.length} Sessions Booked!`:"Session Booked!"}
         </div>
         <div style={{color:C.gray,fontSize:14,marginBottom:24,lineHeight:1.6}}>
-          Your session{selections.length>1?"s":""} with <strong style={{color:C.white}}>{COACH_NAME}</strong> {selections.length>1?"are":"is"} confirmed.
-          A confirmation was sent to <span style={{color:C.sky}}>{form.email}</span>.
+          {session?.id==="group"
+            ? <>You're registered for <strong style={{color:C.white}}>{selectedGroup?.name}</strong> every <strong style={{color:C.sky}}>{selectedGroup?.day} at {selectedGroup?.time}</strong>.</>
+            : <>Your session{selections.length>1?"s":""} with <strong style={{color:C.white}}>{COACH_NAME}</strong> {selections.length>1?"are":"is"} confirmed.</>}
+          {" "}A confirmation was sent to <span style={{color:C.sky}}>{form.email}</span>.
         </div>
         <div style={{background:C.navyMid,borderRadius:14,padding:20,marginBottom:20,textAlign:"left",border:`1px solid ${C.green}44`}}>
           <div style={{color:C.green,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Booking Summary</div>
           <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
-            <span style={{color:C.gray,fontSize:13}}>Session</span>
-            <span style={{color:C.white,fontWeight:700,fontSize:13}}>{session.label}</span>
+            <span style={{color:C.gray,fontSize:13}}>Session Type</span>
+            <span style={{color:C.white,fontWeight:700,fontSize:13}}>{session?.label}</span>
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
-            <span style={{color:C.gray,fontSize:13}}>Sessions Booked</span>
-            <span style={{color:C.white,fontWeight:700,fontSize:13}}>{selections.length}</span>
-          </div>
-          {selections.map((s,i)=>(
-            <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:`1px solid ${C.grayL}`}}>
-              <span style={{color:C.gray,fontSize:12}}>Session {i+1}</span>
-              <span style={{color:C.sky,fontWeight:600,fontSize:12}}>{s.dateLabel} · {s.time}</span>
+          {session?.id==="group"&&selectedGroup?<>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+              <span style={{color:C.gray,fontSize:13}}>Group</span>
+              <span style={{color:C.sky,fontWeight:700,fontSize:13}}>{selectedGroup.name}</span>
             </div>
-          ))}
-          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
-            <span style={{color:C.gray,fontSize:13}}>Total</span>
-            <span style={{color:C.gold,fontWeight:800,fontSize:15}}>${session.price*selections.length}</span>
-          </div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+              <span style={{color:C.gray,fontSize:13}}>Schedule</span>
+              <span style={{color:C.white,fontWeight:600,fontSize:13}}>Every {selectedGroup.day} · {selectedGroup.time}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+              <span style={{color:C.gray,fontSize:13}}>Runs Until</span>
+              <span style={{color:C.white,fontWeight:600,fontSize:13}}>{fmtD(selectedGroup.endDate)}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+              <span style={{color:C.gray,fontSize:13}}>Price</span>
+              <span style={{color:C.gold,fontWeight:800,fontSize:15}}>${session?.price}/session</span>
+            </div>
+          </>:<>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+              <span style={{color:C.gray,fontSize:13}}>Sessions</span>
+              <span style={{color:C.white,fontWeight:700,fontSize:13}}>{selections.length}</span>
+            </div>
+            {selections.map((s,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:`1px solid ${C.grayL}`}}>
+                <span style={{color:C.gray,fontSize:12}}>Session {i+1}</span>
+                <span style={{color:C.sky,fontWeight:600,fontSize:12}}>{s.dateLabel} · {s.time}</span>
+              </div>
+            ))}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+              <span style={{color:C.gray,fontSize:13}}>Total</span>
+              <span style={{color:C.gold,fontWeight:800,fontSize:15}}>${(session?.price||0)*selections.length}</span>
+            </div>
+          </>}
           <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
             <span style={{color:C.gray,fontSize:13}}>Payment</span>
             <span style={{color:C.white,fontWeight:700,fontSize:13}}>{form.payMethod==="online"?"Online via Clover":"In Person"}</span>
@@ -4636,13 +4731,15 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
           <div style={{background:C.navyMid,borderRadius:14,padding:20,marginBottom:20,border:`1px solid ${C.gold}44`}}>
             <div style={{color:C.gold,fontWeight:800,fontSize:14,marginBottom:8}}>💰 Complete Payment</div>
             <div style={{color:C.gray,fontSize:13,marginBottom:14,lineHeight:1.5}}>
-              Pay <strong style={{color:C.white}}>${session.price*selections.length}</strong> ({selections.length} × ${session.price}) via Clover.
+              {session?.id==="group"
+                ? <>Pay <strong style={{color:C.white}}>${session?.price}/session</strong> via Clover. Include your name and group name in the note.</>
+                : <>Pay <strong style={{color:C.white}}>${(session?.price||0)*selections.length}</strong> ({selections.length} × ${session?.price}) via Clover.</>}
             </div>
             <a href={PAYMENT_LINK} target="_blank" rel="noopener noreferrer"
               style={{display:"inline-block",background:"linear-gradient(135deg,#00A651,#007A3D)",
                 color:"#fff",fontWeight:800,fontSize:15,padding:"12px 28px",borderRadius:10,
                 textDecoration:"none",fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.06em",textTransform:"uppercase"}}>
-              Pay ${session.price*selections.length} Now →
+              Pay Now →
             </a>
           </div>
         )}
@@ -4679,16 +4776,18 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
         {/* STEP 1 — Session Type */}
         {step===1&&<>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Choose Session Type</div>
-          <div style={{color:C.gray,fontSize:13,marginBottom:20}}>All sessions are 1 hour · Book multiple sessions at once</div>
+          <div style={{color:C.gray,fontSize:13,marginBottom:20}}>All sessions are 1 hour</div>
           {SESSIONS.map(s=>(
-            <div key={s.id} onClick={()=>setSession(s)}
+            <div key={s.id} onClick={()=>{setSession(s);setSelectedGroup(null);setSelections([]);}}
               style={{background:session?.id===s.id?C.sky+"22":C.navyMid,borderRadius:14,
                 padding:20,marginBottom:12,cursor:"pointer",
                 border:`2px solid ${session?.id===s.id?C.sky:C.grayL}`,transition:"all 0.15s"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
                   <div style={{color:C.white,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif"}}>{s.label}</div>
-                  <div style={{color:C.gray,fontSize:13,marginTop:4}}>{s.desc}</div>
+                  <div style={{color:C.gray,fontSize:13,marginTop:4}}>
+                    {s.id==="group"?"Join one of Coach Star's recurring group sessions":s.desc}
+                  </div>
                 </div>
                 <div style={{textAlign:"right"}}>
                   <div style={{color:C.gold,fontWeight:900,fontSize:24,fontFamily:"'Barlow Condensed',sans-serif"}}>${s.price}</div>
@@ -4698,8 +4797,62 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
               {session?.id===s.id&&<div style={{color:C.sky,fontSize:12,fontWeight:700,marginTop:10}}>✓ Selected</div>}
             </div>
           ))}
-          <Btn v="pri" onClick={()=>setStep(2)} dis={!session} sx={{width:"100%",padding:"13px 0",fontSize:15,marginTop:8}}>
-            Next → Pick Dates & Times
+
+          {/* Group picker — shown when group session is selected */}
+          {session?.id==="group"&&(
+            <div style={{marginTop:4,marginBottom:16}}>
+              <div style={{color:C.gold,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>
+                Available Groups
+              </div>
+              {activeGroups.length===0?(
+                <div style={{background:C.navyMid,borderRadius:12,padding:20,textAlign:"center",border:`1px solid ${C.grayL}`}}>
+                  <div style={{fontSize:28,marginBottom:8}}>👥</div>
+                  <div style={{color:C.white,fontWeight:700,fontSize:15,marginBottom:4}}>No Groups Available</div>
+                  <div style={{color:C.gray,fontSize:13}}>Coach Star hasn't set up any group sessions yet. Check back soon or book a 1-on-1 session.</div>
+                </div>
+              ):activeGroups.map((gs,i)=>{
+                const regs=gs.registrants||[];
+                const isFull=regs.length>=gs.maxPlayers;
+                const spotsLeft=gs.maxPlayers-regs.length;
+                const isSelected=selectedGroup?.id===gs.id;
+                const col=dc(i);
+                return (
+                  <div key={gs.id} onClick={()=>{if(!isFull)setSelectedGroup(isSelected?null:gs);}}
+                    style={{background:isSelected?col+"22":C.navyMid,borderRadius:14,padding:18,marginBottom:10,
+                      cursor:isFull?"not-allowed":"pointer",opacity:isFull?0.55:1,
+                      border:`2px solid ${isSelected?col:isFull?C.red+"44":C.grayL}`,transition:"all 0.15s"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                      <div>
+                        <div style={{color:isSelected?col:C.white,fontWeight:800,fontSize:16,fontFamily:"'Barlow Condensed',sans-serif"}}>{gs.name}</div>
+                        <div style={{color:C.gray,fontSize:13,marginTop:3}}>Every {gs.day} · {gs.time} · 1 hour</div>
+                        {gs.endDate&&<div style={{color:C.gray,fontSize:11,marginTop:2}}>Until {fmtD(gs.endDate)}</div>}
+                      </div>
+                      <div style={{textAlign:"right",flexShrink:0,marginLeft:12}}>
+                        {isFull
+                          ? <div style={{background:C.red+"22",color:C.red,borderRadius:6,padding:"4px 10px",fontSize:12,fontWeight:700}}>Full</div>
+                          : <div>
+                              <div style={{color:isSelected?col:C.green,fontWeight:800,fontSize:15}}>{spotsLeft} spot{spotsLeft!==1?"s":""} left</div>
+                              <div style={{color:C.gray,fontSize:11}}>{regs.length}/{gs.maxPlayers} joined</div>
+                            </div>}
+                      </div>
+                    </div>
+                    {/* Capacity bar */}
+                    <div style={{background:C.grayL,borderRadius:4,height:4,marginTop:12}}>
+                      <div style={{width:`${Math.min((regs.length/gs.maxPlayers)*100,100)}%`,height:"100%",
+                        background:isFull?C.red:col,borderRadius:4}}/>
+                    </div>
+                    {isSelected&&<div style={{color:col,fontSize:12,fontWeight:700,marginTop:10}}>✓ Selected</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <Btn v="pri"
+            onClick={()=>setStep(session?.id==="group"?3:2)}
+            dis={!session||(session?.id==="group"&&!selectedGroup)}
+            sx={{width:"100%",padding:"13px 0",fontSize:15,marginTop:8}}>
+            {session?.id==="group"?"Next → Your Info":"Next → Pick Dates & Times"}
           </Btn>
         </>}
 
@@ -4819,19 +4972,39 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
               <span style={{color:C.gray,fontSize:12}}>Session Type</span>
               <span style={{color:C.white,fontWeight:600,fontSize:12}}>{session?.label}</span>
             </div>
-            {selections.map((s,i)=>(
+            {/* Group session summary */}
+            {session?.id==="group"&&selectedGroup&&<>
+              <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:`1px solid ${C.grayL}`}}>
+                <span style={{color:C.gray,fontSize:12}}>Group</span>
+                <span style={{color:C.sky,fontWeight:600,fontSize:12}}>{selectedGroup.name}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:`1px solid ${C.grayL}`}}>
+                <span style={{color:C.gray,fontSize:12}}>Schedule</span>
+                <span style={{color:C.white,fontWeight:600,fontSize:12}}>Every {selectedGroup.day} · {selectedGroup.time}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:`1px solid ${C.grayL}`}}>
+                <span style={{color:C.gray,fontSize:12}}>Until</span>
+                <span style={{color:C.white,fontWeight:600,fontSize:12}}>{fmtD(selectedGroup.endDate)}</span>
+              </div>
+            </>}
+            {/* 1-on-1 session summary */}
+            {session?.id!=="group"&&selections.map((s,i)=>(
               <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:`1px solid ${C.grayL}`}}>
                 <span style={{color:C.gray,fontSize:12}}>Session {i+1}</span>
                 <span style={{color:C.sky,fontWeight:600,fontSize:12}}>{s.dateLabel} · {s.time}</span>
               </div>
             ))}
             <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
-              <span style={{color:C.gray,fontSize:12,fontWeight:700}}>Total</span>
-              <span style={{color:C.gold,fontWeight:800,fontSize:15}}>${(session?.price||0)*selections.length}</span>
+              <span style={{color:C.gray,fontSize:12,fontWeight:700}}>Price</span>
+              <span style={{color:C.gold,fontWeight:800,fontSize:15}}>
+                {session?.id==="group"
+                  ? `$${session?.price}/session`
+                  : `$${(session?.price||0)*selections.length}`}
+              </span>
             </div>
           </div>
           <div style={{display:"flex",gap:10}}>
-            <Btn v="gh" onClick={()=>setStep(2)} sx={{flex:1}}>← Back</Btn>
+            <Btn v="gh" onClick={()=>setStep(session?.id==="group"?1:2)} sx={{flex:1}}>← Back</Btn>
             <Btn v="pri" onClick={()=>{if(validate())setStep(4);}} sx={{flex:2}}>Next → Payment</Btn>
           </div>
         </>}
@@ -4839,7 +5012,11 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
         {/* STEP 4 — Payment */}
         {step===4&&<>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Payment Method</div>
-          <div style={{color:C.gray,fontSize:13,marginBottom:20}}>Total due: <strong style={{color:C.gold}}>${(session?.price||0)*selections.length}</strong> ({selections.length} session{selections.length!==1?"s":""})</div>
+          <div style={{color:C.gray,fontSize:13,marginBottom:20}}>
+            {session?.id==="group"&&selectedGroup
+              ? <>Group: <strong style={{color:C.white}}>{selectedGroup.name}</strong> · <strong style={{color:C.gold}}>${session?.price}/session</strong></>
+              : <>Total due: <strong style={{color:C.gold}}>${(session?.price||0)*selections.length}</strong> ({selections.length} session{selections.length!==1?"s":""})</>}
+          </div>
           {[{id:"online",icon:"💳",title:"Pay Online",desc:`Secure payment via Clover`,color:C.green},{id:"inperson",icon:"💵",title:"Pay In Person",desc:"Bring cash or card to your session",color:C.sky}].map(opt=>(
             <div key={opt.id} onClick={()=>upd("payMethod",opt.id)}
               style={{background:form.payMethod===opt.id?opt.color+"18":C.navyMid,borderRadius:14,
@@ -4860,7 +5037,10 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
             <div style={{color:C.gray,fontSize:12,lineHeight:1.5}}>Sessions are confirmed after payment is received. Online payments can be made right after booking.</div>
           </div>
           <Btn v="org" onClick={handleSubmit} dis={submitting} sx={{width:"100%",padding:"14px 0",fontSize:15,marginBottom:10}}>
-            {submitting?"Booking...`":"✓ Confirm "+selections.length+" Session"+(selections.length!==1?"s":"")}
+            {submitting?"Booking..."
+              : session?.id==="group"&&selectedGroup
+              ? `✓ Join ${selectedGroup.name}`
+              : `✓ Confirm ${selections.length} Session${selections.length!==1?"s":""}`}
           </Btn>
           <Btn v="gh" onClick={()=>setStep(3)} sx={{width:"100%",padding:"11px 0"}}>← Back</Btn>
         </>}
@@ -4918,6 +5098,11 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
   };
 
   const allSlots=isWeekend(selDateObj)?WEEKEND_SLOTS:WEEKDAY_SLOTS;
+  const selDowAdmin=DAYS_OF_WEEK[selDateObj.getDay()];
+  const groupSlotsAdmin=(localSched?.groupSlots||[]).filter(gs=>{
+    if(!gs.endDate||new Date(gs.endDate+"T23:59:59")<new Date()) return false;
+    return gs.day===selDowAdmin;
+  });
   const blockedSlots=(localSched?.blocked||[]).filter(b=>b.date===selDate).map(b=>b.time);
   const bookedSlots=todayBookings.map(b=>b.time);
 
@@ -4998,11 +5183,23 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
           {allSlots.map(slot=>{
             const booking=todayBookings.find(b=>b.time===slot);
             const isBlocked=blockedSlots.includes(slot);
+            const groupSlot=groupSlotsAdmin.find(gs=>gs.time===slot);
             return (
               <div key={slot} style={{display:"flex",gap:12,alignItems:"stretch",marginBottom:8}}>
                 <div style={{width:70,flexShrink:0,color:C.gold,fontWeight:700,fontSize:12,
                   fontFamily:"'Barlow Condensed',sans-serif",paddingTop:14}}>{slot}</div>
-                {booking?(
+                {groupSlot?(
+                  <div style={{flex:1,background:C.sky+"11",borderRadius:10,padding:"12px 16px",
+                    border:`1px solid ${C.sky}44`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{color:C.sky,fontWeight:700,fontSize:14}}>👥 {groupSlot.name}</div>
+                      <div style={{color:C.gray,fontSize:12,marginTop:2}}>
+                        Group · {(groupSlot.registrants||[]).length}/{groupSlot.maxPlayers} players
+                      </div>
+                    </div>
+                    <Badge c={C.sky}>Group</Badge>
+                  </div>
+                ):booking?(
                   <div style={{flex:1,background:C.navyMid,borderRadius:10,padding:"12px 16px",
                     border:`1px solid ${booking.payStatus==="paid"?C.green:C.sky}44`}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -5308,9 +5505,12 @@ export default function App() {
     setData(d=>({...d,tournaments:d.tournaments.filter(x=>x.id!==tId)}));
   };
 
-  const onSubmitBooking=async(b)=>{
+  const onSubmitBooking=async(b, updatedSchedule)=>{
     await saveBooking(b);
     setBookings(prev=>[...prev,b]);
+    if(updatedSchedule){
+      setCoachSchedule(updatedSchedule);
+    }
   };
 
   const onUpdateBooking=(b,action)=>{
