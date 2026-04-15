@@ -2506,6 +2506,120 @@ function LoginPage({onSuccess, logoUrl}) {
 }
 
 // ─── COACH STAR DASHBOARD ─────────────────────────────────────────────────────
+// ─── PENDING BOOKINGS COMPONENT ──────────────────────────────────────────────
+function PendingBookings({bookings, onUpdateBooking}) {
+  const [declineId, setDeclineId] = useState(null);
+  const [declineMsg, setDeclineMsg] = useState("");
+
+  const pending = [...bookings]
+    .filter(b=>b.status==="pending")
+    .sort((a,b)=>(a.bookedAt||"").localeCompare(b.bookedAt||""));
+
+  const approve = async(b) => {
+    const updated = {...b, status:"confirmed"};
+    await updateBooking(updated);
+    onUpdateBooking(updated, "update");
+    await sendEmail(EJS.coachTemplate, {
+      coach_name: b.clientName, coach_email: b.clientEmail,
+      tournament_name: `Training Session Confirmed — ${COACH_NAME}`,
+      tournament_dates: b.dateLabel ? `${b.dateLabel} at ${b.time}` : `${b.groupName||""} at ${b.time}`,
+      location: "Shoebox Sports - Fenton, MI",
+      teams_list: `✓ Your booking has been APPROVED!\nSession: ${b.sessionLabel}\nDate: ${b.dateLabel||"Recurring"} at ${b.time}\nSee you there!`,
+      team_count: "1",
+      payment_link: b.payMethod==="online" ? PAYMENT_LINK : "Pay at your session",
+    });
+  };
+
+  const decline = async(b, msg) => {
+    const updated = {...b, status:"declined", declineReason: msg};
+    await updateBooking(updated);
+    onUpdateBooking(updated, "update");
+    await sendEmail(EJS.coachTemplate, {
+      coach_name: b.clientName, coach_email: b.clientEmail,
+      tournament_name: `Booking Update — ${COACH_NAME}`,
+      tournament_dates: b.dateLabel ? `${b.dateLabel} at ${b.time}` : `${b.time}`,
+      location: "Shoebox Sports - Fenton, MI",
+      teams_list: `Your booking request could not be confirmed at this time.\nSession: ${b.sessionLabel}\nDate: ${b.dateLabel||"Recurring"} at ${b.time}${msg ? `\n\nReason: ${msg}` : ""}\n\nPlease feel free to book another available time.`,
+      team_count: "1",
+      payment_link: "N/A",
+    });
+    setDeclineId(null);
+    setDeclineMsg("");
+  };
+
+  if (!pending.length) return (
+    <div style={{textAlign:"center",padding:"50px 0"}}>
+      <div style={{fontSize:42,marginBottom:12}}>✅</div>
+      <div style={{color:C.white,fontWeight:700,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
+        All Caught Up!
+      </div>
+      <div style={{color:C.gray,fontSize:13}}>No pending bookings to review right now</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{color:C.gray,fontSize:13,marginBottom:16}}>
+        Review and respond to each booking request. Clients will receive an email notification.
+      </div>
+      {pending.map(b=>(
+        <div key={b.id} style={{background:C.navyMid,borderRadius:14,padding:18,marginBottom:12,
+          border:`1px solid ${C.gold}44`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",
+            flexWrap:"wrap",gap:10,marginBottom:14}}>
+            <div>
+              <div style={{color:C.white,fontWeight:700,fontSize:16}}>{b.clientName}</div>
+              <div style={{color:C.gold,fontSize:13,fontWeight:600,marginTop:3}}>{b.sessionLabel}</div>
+              <div style={{color:C.gray,fontSize:12,marginTop:2}}>
+                {b.dateLabel ? `${b.dateLabel} at ${b.time}` : `Every ${b.groupName||""} at ${b.time}`}
+              </div>
+              {b.clientPhone&&<div style={{color:C.sky,fontSize:12,marginTop:5}}>📞 {b.clientPhone}</div>}
+              {b.clientEmail&&<div style={{color:C.gray,fontSize:11,marginTop:2}}>✉️ {b.clientEmail}</div>}
+              <div style={{color:C.grayL,fontSize:11,marginTop:6}}>
+                Requested {b.bookedAt
+                  ? new Date(b.bookedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"})
+                  : ""}
+              </div>
+            </div>
+            <Badge c={C.gold}>⏳ Pending</Badge>
+          </div>
+
+          {declineId===b.id ? (
+            <div style={{background:C.navy,borderRadius:10,padding:14,border:`1px solid ${C.red}44`}}>
+              <div style={{color:C.red,fontSize:12,fontWeight:700,marginBottom:8}}>
+                Reason for declining (optional — will be sent to client)
+              </div>
+              <textarea value={declineMsg} onChange={e=>setDeclineMsg(e.target.value)}
+                placeholder="e.g. That slot is no longer available. Please rebook for another time..."
+                rows={3}
+                style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,
+                  color:C.white,fontSize:13,padding:"10px 12px",outline:"none",
+                  boxSizing:"border-box",fontFamily:"inherit",resize:"none"}}/>
+              <div style={{display:"flex",gap:8,marginTop:10}}>
+                <Btn v="gh" onClick={()=>{setDeclineId(null);setDeclineMsg("");}} sx={{flex:1}}>Cancel</Btn>
+                <Btn v="danger" onClick={()=>decline(b,declineMsg)} sx={{flex:2}}>✕ Send Decline</Btn>
+              </div>
+            </div>
+          ) : (
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>{setDeclineId(b.id);setDeclineMsg("");}}
+                style={{flex:1,padding:"11px 0",background:C.red+"22",border:`1px solid ${C.red}44`,
+                  color:C.red,borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"inherit"}}>
+                ✕ Decline
+              </button>
+              <button onClick={()=>approve(b)}
+                style={{flex:2,padding:"11px 0",background:`linear-gradient(135deg,${C.green},#007A3D)`,
+                  border:"none",color:"#fff",borderRadius:8,cursor:"pointer",fontWeight:800,fontSize:14,fontFamily:"inherit"}}>
+                ✓ Approve
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, onSignOut, logoUrl}) {
   const [selDate, setSelDate]     = useState(dateKey(new Date()));
   const [tab, setTab]             = useState("calendar");
@@ -2822,103 +2936,7 @@ function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, 
         </>}
 
         {/* ── PENDING TAB ── */}
-        {tab==="pending"&&(()=>{
-          const pending=bookings.filter(b=>b.status==="pending")
-            .sort((a,b)=>a.bookedAt?.localeCompare(b.bookedAt));
-          const [declineId,setDeclineId]=useState(null);
-          const [declineMsg,setDeclineMsg]=useState("");
-
-          const approve=async(b)=>{
-            const updated={...b,status:"confirmed"};
-            await updateBooking(updated); onUpdateBooking(updated,"update");
-            // Email client
-            await sendEmail(EJS.coachTemplate,{
-              coach_name:b.clientName, coach_email:b.clientEmail,
-              tournament_name:`Training Session Confirmed — ${COACH_NAME}`,
-              tournament_dates:b.dateLabel?`${b.dateLabel} at ${b.time}`:`${b.groupName||""} at ${b.time}`,
-              location:"Shoebox Sports - Fenton, MI",
-              teams_list:`Your booking has been APPROVED ✓\nSession: ${b.sessionLabel}\nDate: ${b.dateLabel||"Recurring"} at ${b.time}`,
-              team_count:"1", payment_link:b.payMethod==="online"?PAYMENT_LINK:"Pay at your session",
-            });
-          };
-
-          const decline=async(b,msg)=>{
-            const updated={...b,status:"declined",declineReason:msg};
-            await updateBooking(updated); onUpdateBooking(updated,"update");
-            // Email client with reason
-            await sendEmail(EJS.coachTemplate,{
-              coach_name:b.clientName, coach_email:b.clientEmail,
-              tournament_name:`Booking Update — ${COACH_NAME}`,
-              tournament_dates:b.dateLabel?`${b.dateLabel} at ${b.time}`:`${b.time}`,
-              location:"Shoebox Sports - Fenton, MI",
-              teams_list:`Your booking request was DECLINED.\nSession: ${b.sessionLabel}\nDate: ${b.dateLabel||"Recurring"} at ${b.time}${msg?`\nReason: ${msg}`:""}`,
-              team_count:"1", payment_link:"N/A",
-            });
-            setDeclineId(null); setDeclineMsg("");
-          };
-
-          if(!pending.length) return (
-            <div style={{textAlign:"center",padding:"40px 0"}}>
-              <div style={{fontSize:36,marginBottom:12}}>✅</div>
-              <div style={{color:C.white,fontWeight:700,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>All Caught Up!</div>
-              <div style={{color:C.gray,fontSize:13}}>No pending bookings to review</div>
-            </div>
-          );
-
-          return (
-            <div>
-              {pending.map(b=>(
-                <div key={b.id} style={{background:C.navyMid,borderRadius:14,padding:18,marginBottom:12,
-                  border:`1px solid ${C.gold}44`}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10,marginBottom:12}}>
-                    <div>
-                      <div style={{color:C.white,fontWeight:700,fontSize:16}}>{b.clientName}</div>
-                      <div style={{color:C.gold,fontSize:13,fontWeight:600,marginTop:2}}>{b.sessionLabel}</div>
-                      <div style={{color:C.gray,fontSize:12,marginTop:2}}>
-                        {b.dateLabel?`${b.dateLabel} at ${b.time}`:`Every ${b.groupName||""} at ${b.time}`}
-                      </div>
-                      {b.clientPhone&&<div style={{color:C.sky,fontSize:12,marginTop:4}}>📞 {b.clientPhone}</div>}
-                      {b.clientEmail&&<div style={{color:C.gray,fontSize:11,marginTop:1}}>✉️ {b.clientEmail}</div>}
-                      <div style={{color:C.gray,fontSize:11,marginTop:4}}>
-                        Requested {b.bookedAt?new Date(b.bookedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}
-                      </div>
-                    </div>
-                    <Badge c={C.gold}>⏳ Pending</Badge>
-                  </div>
-
-                  {declineId===b.id?(
-                    <div style={{background:C.navy,borderRadius:10,padding:12,border:`1px solid ${C.red}44`}}>
-                      <div style={{color:C.red,fontSize:12,fontWeight:700,marginBottom:8}}>Reason for declining (optional)</div>
-                      <textarea value={declineMsg} onChange={e=>setDeclineMsg(e.target.value)}
-                        placeholder="e.g. Slot no longer available, please rebook for another time..."
-                        rows={3}
-                        style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,
-                          color:C.white,fontSize:13,padding:"10px 12px",outline:"none",
-                          boxSizing:"border-box",fontFamily:"inherit",resize:"none"}}/>
-                      <div style={{display:"flex",gap:8,marginTop:10}}>
-                        <Btn v="gh" onClick={()=>{setDeclineId(null);setDeclineMsg("");}} sx={{flex:1}}>Cancel</Btn>
-                        <Btn v="danger" onClick={()=>decline(b,declineMsg)} sx={{flex:2}}>Send Decline</Btn>
-                      </div>
-                    </div>
-                  ):(
-                    <div style={{display:"flex",gap:8}}>
-                      <button onClick={()=>{setDeclineId(b.id);setDeclineMsg("");}}
-                        style={{flex:1,padding:"10px 0",background:C.red+"22",border:`1px solid ${C.red}44`,
-                          color:C.red,borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>
-                        ✕ Decline
-                      </button>
-                      <button onClick={()=>approve(b)}
-                        style={{flex:2,padding:"10px 0",background:`linear-gradient(135deg,${C.green},#007A3D)`,
-                          border:"none",color:"#fff",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>
-                        ✓ Approve
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          );
-        })()}
+        {tab==="pending"&&<PendingBookings bookings={bookings} onUpdateBooking={onUpdateBooking}/>}
 
         {/* ── GROUPS TAB ── */}
         {tab==="groups"&&<>
