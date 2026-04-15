@@ -5097,8 +5097,11 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
             </div>
           )}
 
-          {/* Date strip */}
-          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:12,marginBottom:16}}>
+          {/* Date strip — negative margins to break out of parent padding for full-width scroll */}
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:12,paddingLeft:20,paddingRight:20,
+            marginLeft:-20,marginRight:-20,marginBottom:16,
+            WebkitOverflowScrolling:"touch",scrollbarWidth:"none"}}>
+            <style>{`div::-webkit-scrollbar{display:none}`}</style>
             {dates.map(d=>{
               const key=dateKey(d);
               const slots=getSlotsForDate(d);
