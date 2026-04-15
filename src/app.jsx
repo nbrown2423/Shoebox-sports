@@ -2174,15 +2174,16 @@ function AdminTeams({tournament, onUpdateTournament}) {
   );
 }
 
-function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTournament,logoUrl,onSaveLogoUrl,onGoHome,bookings,coachSchedule,onUpdateBooking,onUpdateSchedule}) {
-  const [aTId,setATId]=useState(data.tournaments[0]?.id);
-  const [tab,setTab]=useState("schedule");
-  const [showCreate,setShowCreate]=useState(false);
-  const [showEdit,setShowEdit]=useState(false);
-  const [showDeleteConfirm,setShowDeleteConfirm]=useState(false);
-  const [view,setView]=useState("tournaments"); // "tournaments" | "coach"
-  const t=data.tournaments.find(x=>x.id===aTId)||data.tournaments[0];
-  const is3v3=t?.type==="3v3";
+function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTournament,logoUrl,onSaveLogoUrl,onGoHome,bookings,coachSchedule,onUpdateBooking,onUpdateSchedule,role}) {
+  const [aTId,setATId]             = useState(null);
+  const [tab,setTab]               = useState("schedule");
+  const [showCreate,setShowCreate] = useState(false);
+  const [showEdit,setShowEdit]     = useState(false);
+  const [showDeleteConfirm,setShowDeleteConfirm] = useState(false);
+  const [view,setView]             = useState("tournaments");
+  const isDirector = role==="director";
+  const t = data.tournaments.find(x=>x.id===aTId);
+  const is3v3 = t?.type==="3v3";
   const tabs=[
     {id:"schedule",icon:"📋",l:"Schedule"},
     {id:"teams",icon:"🏀",l:"Teams"},
@@ -2192,65 +2193,142 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
     {id:"registrations",icon:"📝",l:"Registrations"},
     {id:"settings",icon:"⚙️",l:"Settings"},
   ];
-  return (
-    <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:`linear-gradient(160deg,${C.navy},${C.navyMid})`}}>
-      {/* Top Nav */}
-      <div style={{background:C.navyMid,borderBottom:`1px solid ${C.grayL}`,padding:"0 22px",position:"sticky",top:0,zIndex:100,boxShadow:`0 2px 18px #00000044`}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",height:58,maxWidth:1200,margin:"0 auto"}}>
-          <button onClick={onGoHome} style={{background:"transparent",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center"}}>
-            {logoUrl
-              ? <img src={logoUrl} alt="Shoebox Sports" style={{height:38,maxWidth:140,objectFit:"contain"}} onError={e=>e.target.style.display="none"}/>
-              : <Logo sz={34}/>}
-          </button>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            {/* View Switcher */}
+
+  const NavBar=({showNew=true})=>(
+    <div style={{background:C.navyMid,borderBottom:`1px solid ${C.grayL}`,padding:"0 22px",position:"sticky",top:0,zIndex:100,boxShadow:`0 2px 18px #00000044`}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",height:58,maxWidth:1200,margin:"0 auto"}}>
+        <button onClick={()=>{setATId(null);setView("tournaments");}}
+          style={{background:"transparent",border:"none",cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:10}}>
+          {logoUrl
+            ? <img src={logoUrl} alt="Shoebox Sports" style={{height:38,maxWidth:140,objectFit:"contain"}} onError={e=>e.target.style.display="none"}/>
+            : <Logo sz={34}/>}
+          {aTId&&<span style={{color:C.gray,fontSize:12,fontWeight:600}}>← All Tournaments</span>}
+        </button>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {!isDirector&&(
             <div style={{display:"flex",background:C.navy,borderRadius:50,padding:3,border:`1px solid ${C.grayL}`}}>
               {[{id:"tournaments",l:"🏀 Tournaments"},{id:"coach",l:"🏋️ Coach Star"}].map(v=>(
-                <button key={v.id} onClick={()=>setView(v.id)}
+                <button key={v.id} onClick={()=>{setView(v.id);setATId(null);}}
                   style={{padding:"6px 14px",borderRadius:50,border:"none",
                     background:view===v.id?C.sky:"transparent",
                     color:view===v.id?"#fff":C.gray,cursor:"pointer",fontWeight:700,fontSize:12,
-                    fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.04em",
-                    transition:"all 0.15s",whiteSpace:"nowrap"}}>
+                    fontFamily:"'Barlow Condensed',sans-serif",transition:"all 0.15s",whiteSpace:"nowrap"}}>
                   {v.l}
                 </button>
               ))}
             </div>
-            <Badge c={C.green}>● Admin</Badge>
-            {view==="tournaments"&&<Btn v="org" onClick={()=>setShowCreate(true)} sx={{padding:"8px 16px",fontSize:12}}>+ New Tournament</Btn>}
-          </div>
+          )}
+          <Badge c={isDirector?C.sky:C.green}>● {isDirector?"Director":"Admin"}</Badge>
+          {showNew&&view==="tournaments"&&(
+            <Btn v="org" onClick={()=>setShowCreate(true)} sx={{padding:"8px 16px",fontSize:12}}>+ New Tournament</Btn>
+          )}
         </div>
       </div>
+    </div>
+  );
 
-      {/* ── COACH STAR VIEW ── */}
-      {view==="coach"&&(
-        <div style={{padding:22,maxWidth:1200,margin:"0 auto"}}>
-          <AdminBookings
-            bookings={bookings}
-            schedule={coachSchedule}
-            onUpdateBooking={onUpdateBooking}
-            onDeleteBooking={async(id)=>{await deleteBooking(id);onUpdateBooking({id},"delete");}}
-            onUpdateSchedule={onUpdateSchedule}/>
-        </div>
-      )}
-
-      {/* ── TOURNAMENTS VIEW ── */}
-      {view==="tournaments"&&<>
-        {/* Tournament selector tabs */}
-        {data.tournaments.length>0&&(
-          <div style={{background:C.navyLight,borderBottom:`1px solid ${C.grayL}`,padding:"0 22px",overflowX:"auto"}}>
-            <div style={{display:"flex",gap:4,maxWidth:1200,margin:"0 auto",paddingTop:8}}>
-              {data.tournaments.map(x=>(
-                <button key={x.id} onClick={()=>{setATId(x.id);setTab("schedule");}} style={{
-                  padding:"8px 14px",background:aTId===x.id?C.sky+"22":"transparent",
-                  color:aTId===x.id?C.sky:C.gray,border:`1px solid ${aTId===x.id?C.sky+"66":"transparent"}`,
-                  borderBottom:"none",borderRadius:"8px 8px 0 0",cursor:"pointer",fontWeight:700,fontSize:13,whiteSpace:"nowrap"}}>
-                  {x.name}
-                </button>
-              ))}
-            </div>
+  // ── LANDING PAGE ──────────────────────────────────────────────────────────
+  if (view==="tournaments"&&!aTId) {
+    const sections=[
+      {key:"active",  label:"Live",     dot:"🟢", color:C.green},
+      {key:"upcoming",label:"Upcoming", dot:"🟡", color:C.gold},
+      {key:"complete",label:"Past",     dot:"🔴", color:C.red},
+    ];
+    return (
+      <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:`linear-gradient(160deg,${C.navy},${C.navyMid})`}}>
+        <NavBar/>
+        <div style={{padding:"28px 22px",maxWidth:900,margin:"0 auto"}}>
+          <div style={{marginBottom:28}}>
+            <div style={{color:C.white,fontWeight:900,fontSize:28,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Tournament Dashboard</div>
+            <div style={{color:C.gray,fontSize:14}}>Select a tournament to manage it</div>
           </div>
-        )}
+          {data.tournaments.length===0&&(
+            <div style={{textAlign:"center",padding:"60px 0"}}>
+              <div style={{fontSize:48,marginBottom:16}}>🏀</div>
+              <div style={{color:C.white,fontWeight:800,fontSize:22,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>No Tournaments Yet</div>
+              <div style={{color:C.gray,fontSize:14,marginBottom:24}}>Create your first tournament to get started</div>
+              <Btn v="org" onClick={()=>setShowCreate(true)} sx={{padding:"12px 28px",fontSize:15}}>+ Create Tournament</Btn>
+            </div>
+          )}
+          {sections.map(sec=>{
+            const tourns=data.tournaments.filter(x=>x.status===sec.key);
+            if(!tourns.length) return null;
+            return (
+              <div key={sec.key} style={{marginBottom:32}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                  <div style={{fontSize:18}}>{sec.dot}</div>
+                  <div style={{color:sec.color,fontWeight:800,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",letterSpacing:"0.06em"}}>{sec.label}</div>
+                  <div style={{flex:1,height:1,background:sec.color+"33",marginLeft:4}}/>
+                  <div style={{color:sec.color,fontSize:12,fontWeight:700,background:sec.color+"18",borderRadius:50,padding:"3px 12px"}}>{tourns.length}</div>
+                </div>
+                {tourns.map(x=>{
+                  const dates=tDates(x);
+                  const divCount=x.divisions?.length||0;
+                  const teamCount=x.divisions?.reduce((s,d)=>s+(d.teams?.length||0),0)||0;
+                  const gamesPlayed=x.games?.filter(g=>g.status==="final").length||0;
+                  const totalGames=x.games?.filter(g=>g.phase==="pool").length||0;
+                  return (
+                    <div key={x.id} onClick={()=>{setATId(x.id);setTab("schedule");}}
+                      style={{background:C.navyMid,borderRadius:16,padding:"18px 22px",marginBottom:10,
+                        cursor:"pointer",border:`1px solid ${x.status==="active"?C.green+"66":x.status==="complete"?C.red+"33":C.grayL}`,
+                        boxShadow:x.status==="active"?`0 0 20px ${C.green}22`:"none",transition:"border 0.15s"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+                        <div style={{flex:1}}>
+                          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6,flexWrap:"wrap"}}>
+                            <div style={{width:10,height:10,borderRadius:"50%",background:sec.color,flexShrink:0}}/>
+                            <div style={{color:C.white,fontWeight:800,fontSize:19,fontFamily:"'Barlow Condensed',sans-serif"}}>{x.name}</div>
+                            {x.type&&<div style={{background:C.sky+"22",color:C.sky,borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:800}}>{x.type}</div>}
+                          </div>
+                          <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+                            <span style={{color:C.gray,fontSize:13}}>📅 {dates.map(fmtD).join(" – ")}</span>
+                            <span style={{color:C.gray,fontSize:13}}>📍 {x.location}</span>
+                            {x.regCloseDate&&(()=>{
+                              const closed=new Date(x.regCloseDate+"T23:59:59")<new Date();
+                              return <span style={{color:closed?C.red:C.gold,fontSize:12,fontWeight:600}}>
+                                {closed?"⛔ Reg. closed":"⏰ Reg. closes"} {fmtD(x.regCloseDate)}
+                              </span>;
+                            })()}
+                          </div>
+                        </div>
+                        <div style={{display:"flex",gap:20,alignItems:"center"}}>
+                          {[["Divisions",divCount],["Teams",teamCount],totalGames>0?["Games",`${gamesPlayed}/${totalGames}`]:null].filter(Boolean).map(([l,v])=>(
+                            <div key={l} style={{textAlign:"center"}}>
+                              <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif"}}>{v}</div>
+                              <div style={{color:C.gray,fontSize:10,textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}</div>
+                            </div>
+                          ))}
+                          <div style={{color:C.sky,fontWeight:700,fontSize:22}}>›</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+        {showCreate&&<CreateModal onSave={x=>{onAdd(x);setATId(x.id);setTab("schedule");setShowCreate(false);}} onClose={()=>setShowCreate(false)}/>}
+      </div>
+    );
+  }
+
+  // ── COACH STAR VIEW ──────────────────────────────────────────────────────
+  if (view==="coach") return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:`linear-gradient(160deg,${C.navy},${C.navyMid})`}}>
+      <NavBar showNew={false}/>
+      <div style={{padding:22,maxWidth:1200,margin:"0 auto"}}>
+        <AdminBookings bookings={bookings} schedule={coachSchedule}
+          onUpdateBooking={onUpdateBooking}
+          onDeleteBooking={async(id)=>{await deleteBooking(id);onUpdateBooking({id},"delete");}}
+          onUpdateSchedule={onUpdateSchedule}/>
+      </div>
+    </div>
+  );
+
+  // ── TOURNAMENT DETAIL VIEW ────────────────────────────────────────────────
+  return (
+    <div style={{fontFamily:"'DM Sans',sans-serif",minHeight:"100vh",background:`linear-gradient(160deg,${C.navy},${C.navyMid})`}}>
+      <NavBar/>
 
       {/* Tournament header */}
       {t&&(
@@ -2258,7 +2336,11 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
           <div style={{maxWidth:1200,margin:"0 auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14,flexWrap:"wrap",gap:10}}>
               <div>
-                <div style={{color:C.white,fontWeight:900,fontSize:24,fontFamily:"'Barlow Condensed',sans-serif"}}>{t.name}</div>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
+                  <div style={{fontSize:14}}>{t.status==="active"?"🟢":t.status==="complete"?"🔴":"🟡"}</div>
+                  <div style={{color:C.white,fontWeight:900,fontSize:24,fontFamily:"'Barlow Condensed',sans-serif"}}>{t.name}</div>
+                  {t.type&&<div style={{background:C.sky+"22",color:C.sky,borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:800}}>{t.type}</div>}
+                </div>
                 <div style={{color:C.gray,fontSize:12,marginTop:5,display:"flex",gap:14,flexWrap:"wrap"}}>
                   <span>📅 {tDates(t).map(fmtD).join(" → ")}</span>
                   <span>🕐 {t.startTime}</span>
@@ -2269,28 +2351,21 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
                       {closed?"⛔ Reg. closed":"⏰ Reg. closes"} {fmtD(t.regCloseDate)}
                     </span>;
                   })()}
-                  <span>😴 {t.restGap===0?"No min rest":`${t.restGap/60}hr rest`}</span>
-                  <span>🏀 {t.divisions.reduce((s,d)=>s+d.teams.length,0)} teams</span>
-                  <span>📋 {t.games.filter(g=>g.court).length}/{t.games.length} scheduled</span>
-                </div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                  {t.divisions.map((d,i)=><Badge key={d.id} c={dc(i)}>{dshort(d.gradeId,d.gender)}</Badge>)}
                 </div>
               </div>
-              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                <Badge c={t.status==="active"?C.green:t.status==="upcoming"?C.gold:C.gray}>{t.status}</Badge>
-                <Btn v="teal" onClick={()=>setShowEdit(true)} sx={{padding:"7px 14px",fontSize:12}}>✏️ Edit</Btn>
-                <Btn v="danger" onClick={()=>setShowDeleteConfirm(true)} sx={{padding:"7px 14px",fontSize:12}}>🗑 Delete</Btn>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <Btn v="gh" onClick={()=>setShowEdit(true)} sx={{padding:"8px 14px",fontSize:12}}>✏️ Edit</Btn>
+                <Btn v="danger" onClick={()=>setShowDeleteConfirm(true)} sx={{padding:"8px 14px",fontSize:12}}>🗑 Delete</Btn>
               </div>
             </div>
+            {/* Tabs */}
             <div style={{display:"flex",gap:2,overflowX:"auto"}}>
-              {tabs.map(x=>(
-                <button key={x.id} onClick={()=>setTab(x.id)} style={{
-                  padding:"9px 16px",background:tab===x.id?C.sky:"transparent",
-                  color:tab===x.id?"#fff":C.gray,border:"none",borderRadius:"8px 8px 0 0",
-                  cursor:"pointer",fontWeight:800,fontSize:13,whiteSpace:"nowrap",
-                  fontFamily:"'Barlow Condensed',sans-serif",textTransform:"uppercase",transition:"all 0.15s"}}>
-                  {x.icon} {x.l}
+              {tabs.map(tb=>(
+                <button key={tb.id} onClick={()=>setTab(tb.id)} style={{
+                  padding:"10px 14px",background:tab===tb.id?C.sky+"22":"transparent",
+                  color:tab===tb.id?C.sky:C.gray,border:"none",borderBottom:`2px solid ${tab===tb.id?C.sky:"transparent"}`,
+                  cursor:"pointer",fontWeight:700,fontSize:13,whiteSpace:"nowrap",fontFamily:"'DM Sans',sans-serif"}}>
+                  {tb.icon} {tb.l}
                 </button>
               ))}
             </div>
@@ -2298,50 +2373,46 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
         </div>
       )}
 
-      <div style={{padding:22,maxWidth:1200,margin:"0 auto"}}>
-        {tab==="settings"
-          ? <AdminSettings logoUrl={logoUrl} onSaveLogoUrl={onSaveLogoUrl}/>
-          : tab==="registrations"&&t
-          ? <AdminRegistrations tournament={t} onUpdateTournament={onEditTournament}/>
-          : tab==="teams"&&t
-          ? <AdminTeams tournament={t} onUpdateTournament={onEditTournament}/>
-          : t?<>
-          {tab==="schedule"&&<AdminSchedule tournament={t} onScore={onScore} onUpdateGames={g=>onUpdateGames(t.id,g)}/>}
-          {tab==="standings"&&<AdminStandings tournament={t}/>}
-          {tab==="bracket"&&<AdminBracket tournament={t}/>}
-          {tab==="courts"&&<AdminCourts tournament={t}/>}
-        </>:(
-          <div style={{textAlign:"center",padding:"60px 0"}}>
-            <div style={{fontSize:44,marginBottom:14}}>🏀</div>
-            <div style={{color:C.white,fontWeight:800,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:10}}>No Tournaments Yet</div>
-            <Btn v="org" onClick={()=>setShowCreate(true)}>+ Create Tournament</Btn>
-          </div>
-        )}
-      </div>
+      {!t&&(
+        <div style={{textAlign:"center",padding:"60px 20px"}}>
+          <div style={{fontSize:44,marginBottom:14}}>🏀</div>
+          <div style={{color:C.white,fontWeight:800,fontSize:20,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:10}}>Tournament not found</div>
+          <Btn v="pri" onClick={()=>setATId(null)} sx={{padding:"10px 24px"}}>← Back to Dashboard</Btn>
+        </div>
+      )}
 
-      {/* Create modal */}
+      {t&&(
+        <div style={{padding:"22px 22px",maxWidth:1200,margin:"0 auto"}}>
+          {tab==="settings"
+            ? <AdminSettings logoUrl={logoUrl} onSaveLogoUrl={onSaveLogoUrl}/>
+            : tab==="registrations"
+            ? <AdminRegistrations tournament={t} onUpdateTournament={onEditTournament}/>
+            : tab==="teams"
+            ? <AdminTeams tournament={t} onUpdateTournament={onEditTournament}/>
+            : <>
+              {tab==="schedule"&&<AdminSchedule tournament={t} onScore={onScore} onUpdateGames={g=>onUpdateGames(t.id,g)}/>}
+              {tab==="standings"&&<AdminStandings tournament={t}/>}
+              {tab==="bracket"&&<AdminBracket tournament={t}/>}
+              {tab==="courts"&&<AdminCourts tournament={t}/>}
+            </>}
+        </div>
+      )}
+
       {showCreate&&<CreateModal onSave={x=>{onAdd(x);setATId(x.id);setTab("schedule");setShowCreate(false);}} onClose={()=>setShowCreate(false)}/>}
-
-      {/* Edit modal */}
       {showEdit&&t&&<EditTournamentModal tournament={t} onSave={updated=>{onEditTournament(updated);setShowEdit(false);}} onClose={()=>setShowEdit(false)}/>}
-
-      {/* Delete confirm */}
       {showDeleteConfirm&&t&&(
         <div style={{position:"fixed",inset:0,background:"#000a",zIndex:2000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:C.navyMid,borderRadius:18,padding:32,width:360,maxWidth:"100%",border:`1px solid ${C.red}55`,textAlign:"center"}}>
             <div style={{fontSize:36,marginBottom:12}}>🗑</div>
             <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>Delete Tournament?</div>
-            <div style={{color:C.gray,fontSize:14,marginBottom:24}}>
-              "<span style={{color:C.white}}>{t.name}</span>" will be permanently deleted. This cannot be undone.
-            </div>
+            <div style={{color:C.gray,fontSize:14,marginBottom:24}}>"<span style={{color:C.white}}>{t.name}</span>" will be permanently deleted.</div>
             <div style={{display:"flex",gap:10}}>
               <Btn v="gh" onClick={()=>setShowDeleteConfirm(false)} sx={{flex:1}}>Cancel</Btn>
-              <Btn v="danger" onClick={()=>{onDeleteTournament(t.id);setShowDeleteConfirm(false);setATId(data.tournaments.find(x=>x.id!==t.id)?.id);}} sx={{flex:1}}>Yes, Delete</Btn>
+              <Btn v="danger" onClick={()=>{onDeleteTournament(t.id);setShowDeleteConfirm(false);setATId(null);}} sx={{flex:1}}>Yes, Delete</Btn>
             </div>
           </div>
         </div>
       )}
-      </>}
     </div>
   );
 }
@@ -2349,8 +2420,9 @@ function Admin({data,onScore,onUpdateGames,onAdd,onEditTournament,onDeleteTourna
 // ─── ADMIN LOGIN ──────────────────────────────────────────────────────────────
 // ─── USER CREDENTIALS ────────────────────────────────────────────────────────
 const USERS = {
-  Admin: { password:"Shoebox2026!", role:"admin" },
-  Star:  { password:"Coachstar26",  role:"coach" },
+  Admin:    { password:"Shoebox2026!", role:"admin"    },
+  Star:     { password:"Coachstar26",  role:"coach"    },
+  Cballard: { password:"CoachCornell26", role:"director" },
 };
 const ADMIN_SESSION_KEY = "shoebox_admin_auth";
 
@@ -5303,16 +5375,17 @@ export default function App() {
     );
   }
 
-  // Admin dashboard (Nick)
-  if (adminAuth==="admin") {
+  // Admin / Director dashboard
+  if (adminAuth==="admin"||adminAuth==="director") {
     return (
       <div style={{background:C.navy,minHeight:"100vh"}}>
         <Admin data={data} onScore={onScore} onUpdateGames={onUpdateGames} onAdd={onAdd}
           onEditTournament={onEditTournament} onDeleteTournament={onDeleteTournament}
           logoUrl={logoUrl} onSaveLogoUrl={setLogoUrl}
-          onGoHome={()=>setSelectedTId(null)}
+          onGoHome={()=>setATId?setATId(null):null}
           bookings={bookings} coachSchedule={coachSchedule}
-          onUpdateBooking={onUpdateBooking} onUpdateSchedule={onUpdateSchedule}/>
+          onUpdateBooking={onUpdateBooking} onUpdateSchedule={onUpdateSchedule}
+          role={adminAuth}/>
         <button onClick={signOut}
           style={{position:"fixed",bottom:18,right:18,zIndex:999,
             background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:50,
