@@ -4943,7 +4943,7 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
 
       {/* Tabs */}
       <div style={{display:"flex",gap:6,marginBottom:18,flexWrap:"wrap"}}>
-        {[{id:"calendar",l:"📅 Calendar"},{id:"list",l:"📋 All Bookings"},{id:"schedule",l:"👥 Groups"}].map(t=>(
+        {[{id:"calendar",l:"📅 Calendar"},{id:"list",l:"📋 All Bookings"},{id:"availability",l:"🔁 Availability"},{id:"schedule",l:"👥 Groups"}].map(t=>(
           <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",
             border:`1px solid ${tab===t.id?C.sky:C.grayL}`,background:tab===t.id?C.sky+"22":"transparent",
             color:tab===t.id?C.sky:C.gray,fontWeight:700,fontSize:13}}>
@@ -5098,21 +5098,18 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
       </>}
 
       {/* ── AVAILABILITY TAB ── */}
-      {tab==="schedule"&&<>
+      {/* ── AVAILABILITY TAB ── */}
+      {tab==="availability"&&<>
         <div style={{color:C.gray,fontSize:13,marginBottom:20,lineHeight:1.6}}>
-          Manage recurring weekly hours and group training sessions.
+          Set recurring weekly hours for Coach Star. Mon–Fri 4pm–8pm is always on. Toggle Saturday & Sunday slots below — they repeat automatically every week.
         </div>
-
-        {/* Recurring Weekly Hours */}
-        <div style={{background:C.navyMid,borderRadius:12,padding:16,marginBottom:16,border:`1px solid ${C.grayL}`}}>
-          <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>🔁 Recurring Weekly Hours</div>
-          <div style={{color:C.gray,fontSize:12,marginBottom:14}}>Mon–Fri is always 4pm–8pm. Toggle Saturday & Sunday slots — they repeat every week.</div>
+        <div style={{background:C.navyMid,borderRadius:12,padding:20,border:`1px solid ${C.grayL}`}}>
           {["Saturday","Sunday"].map(day=>{
             const slots=localSched?.availability?.[day]||[];
             return (
-              <div key={day} style={{marginBottom:14}}>
-                <div style={{color:C.white,fontWeight:800,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>{day}</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+              <div key={day} style={{marginBottom:20}}>
+                <div style={{color:C.white,fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:12}}>{day}</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
                   {WEEKEND_SLOTS.map(s=>{
                     const on=slots.includes(s);
                     return (
@@ -5121,9 +5118,9 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
                         const ds2=cur[day]||[];
                         const ns2=on?ds2.filter(x=>x!==s):[...ds2,s].sort((a,b)=>toMins(a)-toMins(b));
                         setLocalSched(p=>({...p,availability:{...cur,[day]:ns2}}));
-                      }} style={{padding:"7px 4px",borderRadius:7,cursor:"pointer",textAlign:"center",
+                      }} style={{padding:"10px 6px",borderRadius:8,cursor:"pointer",textAlign:"center",
                         border:`2px solid ${on?C.sky:C.grayL}`,background:on?C.sky+"22":C.navy,
-                        color:on?C.sky:C.gray,fontWeight:700,fontSize:11}}>
+                        color:on?C.sky:C.gray,fontWeight:700,fontSize:12,transition:"all 0.15s"}}>
                         {on?"✓ ":""}{s}
                       </button>
                     );
@@ -5132,21 +5129,34 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
               </div>
             );
           })}
-          <Btn v="pri" onClick={async()=>{await saveSchedule(localSched);onUpdateSchedule(localSched);}} sx={{width:"100%",padding:"10px 0",fontSize:13,marginTop:8}}>
-            💾 Save Weekly Hours
+          <div style={{background:C.sky+"11",border:`1px solid ${C.sky}33`,borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+            <div style={{color:C.sky,fontSize:12,fontWeight:600}}>
+              💡 Mon–Fri 4:00 PM – 7:00 PM is always available and cannot be toggled off here. Block specific days on the Calendar tab.
+            </div>
+          </div>
+          <Btn v="pri" onClick={async()=>{await saveSchedule(localSched);onUpdateSchedule(localSched);}} sx={{width:"100%",padding:"12px 0",fontSize:14}}>
+            💾 Save Weekend Availability
           </Btn>
         </div>
+      </>}
 
-        {/* Group Training Slots */}
-        <div style={{background:C.navyMid,borderRadius:12,padding:16,border:`1px solid ${C.grayL}`}}>
-          <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>👥 Group Training Slots</div>
-          <div style={{color:C.gray,fontSize:12,marginBottom:14}}>Named recurring groups. Each recurs until the end date you set.</div>
-          {(localSched?.groupSlots||[]).map((gs,gi)=>(
-            <GroupSlotCard key={gs.id} gs={gs} gi={gi} schedule={localSched} onUpdateSchedule={onUpdateSchedule}
-              showRemove={true} localSched={localSched} setLocalSched={setLocalSched}/>
-          ))}
-          <GroupCreateForm localSched={localSched} setLocalSched={setLocalSched} onUpdateSchedule={onUpdateSchedule} isCoach={false}/>
+      {/* ── GROUPS TAB ── */}
+      {tab==="schedule"&&<>
+        <div style={{color:C.gray,fontSize:13,marginBottom:20,lineHeight:1.6}}>
+          Create named recurring group training slots. Each group repeats weekly until its end date.
         </div>
+        {(localSched?.groupSlots||[]).length===0&&(
+          <div style={{textAlign:"center",padding:"32px 0",marginBottom:16}}>
+            <div style={{fontSize:36,marginBottom:10}}>👥</div>
+            <div style={{color:C.white,fontWeight:700,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:6}}>No Group Slots Yet</div>
+            <div style={{color:C.gray,fontSize:13}}>Create a group using the button below</div>
+          </div>
+        )}
+        {(localSched?.groupSlots||[]).map((gs,gi)=>(
+          <GroupSlotCard key={gs.id} gs={gs} gi={gi} schedule={localSched} onUpdateSchedule={onUpdateSchedule}
+            showRemove={true} localSched={localSched} setLocalSched={setLocalSched}/>
+        ))}
+        <GroupCreateForm localSched={localSched} setLocalSched={setLocalSched} onUpdateSchedule={onUpdateSchedule} isCoach={false}/>
       </>}
 
       {/* Add Client Modal */}
