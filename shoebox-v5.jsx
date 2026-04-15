@@ -2703,176 +2703,15 @@ function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, 
           <div style={{color:C.gray,fontSize:13,marginBottom:16,lineHeight:1.6}}>
             Your recurring group training slots. Add players and create new groups here.
           </div>
-
-          {/* Existing group slots */}
-          {(schedule?.groupSlots||[]).length===0?(
-            <div style={{textAlign:"center",padding:"32px 0"}}>
-              <div style={{fontSize:36,marginBottom:10}}>👥</div>
-              <div style={{color:C.white,fontWeight:700,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:6}}>No Group Slots Yet</div>
-              <div style={{color:C.gray,fontSize:13}}>Create a group using the form below</div>
-            </div>
-          ):(schedule?.groupSlots||[]).map((gs,gi)=>{
-            const regs=gs.registrants||[];
-            const isFull=regs.length>=gs.maxPlayers;
-            const isExpired=gs.endDate&&new Date(gs.endDate+"T23:59:59")<new Date();
-            const col=dc(gi);
-            return (
-              <div key={gs.id} style={{background:C.navyMid,borderRadius:14,padding:18,marginBottom:14,
-                border:`1px solid ${isExpired?C.red+"44":col+"44"}`,opacity:isExpired?0.65:1}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-                  <div>
-                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                      <span style={{color:col,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif"}}>{gs.name}</span>
-                      {isExpired&&<span style={{background:C.red+"22",color:C.red,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>Expired</span>}
-                    </div>
-                    <div style={{color:C.gray,fontSize:12,marginTop:3}}>Every {gs.day} · {gs.time} · 1 hour</div>
-                    {gs.endDate&&<div style={{color:isExpired?C.red:C.gold,fontSize:11,fontWeight:600,marginTop:2}}>
-                      {isExpired?"Ended":"Runs until"} {fmtD(gs.endDate)}
-                    </div>}
-                  </div>
-                  <span style={{background:isFull?C.red+"22":C.green+"22",color:isFull?C.red:C.green,
-                    borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700}}>
-                    {regs.length}/{gs.maxPlayers}
-                  </span>
-                </div>
-                {/* Capacity bar */}
-                <div style={{background:C.grayL,borderRadius:4,height:4,marginBottom:12}}>
-                  <div style={{width:`${Math.min((regs.length/gs.maxPlayers)*100,100)}%`,height:"100%",
-                    background:isFull?C.red:col,borderRadius:4,transition:"width 0.3s"}}/>
-                </div>
-                {/* Players */}
-                {regs.map((r,ri)=>(
-                  <div key={ri} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",
-                    borderTop:`1px solid ${C.grayL}`}}>
-                    <div style={{width:24,height:24,borderRadius:"50%",background:col+"33",flexShrink:0,
-                      display:"flex",alignItems:"center",justifyContent:"center",color:col,fontWeight:800,fontSize:11}}>{ri+1}</div>
-                    <div style={{flex:1}}>
-                      <div style={{color:C.white,fontWeight:600,fontSize:13}}>{r.name}</div>
-                      <div style={{color:C.gray,fontSize:11}}>
-                        {r.phone&&`📞 ${r.phone}`}{r.phone&&r.email?" · ":""}{r.email&&`✉️ ${r.email}`}
-                      </div>
-                    </div>
-                    <button onClick={async()=>{
-                      const nr=regs.filter((_,idx)=>idx!==ri);
-                      const ng=(schedule.groupSlots||[]).map(x=>x.id===gs.id?{...x,registrants:nr}:x);
-                      const ns={...schedule,groupSlots:ng};
-                      await saveSchedule(ns); onUpdateSchedule(ns);
-                    }} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,fontWeight:700}}>✕</button>
-                  </div>
-                ))}
-                {/* Add player */}
-                {!isFull&&!isExpired&&(()=>{
-                  const [showP,setShowP]=useState(false);
-                  const [pf,setPf]=useState({name:"",phone:"",email:""});
-                  return showP?(
-                    <div style={{background:C.navy,borderRadius:10,padding:12,marginTop:10,border:`1px solid ${col}44`}}>
-                      <div style={{color:col,fontSize:11,fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Add Player</div>
-                      {[{k:"name",p:"Full name (required)",t:"text"},{k:"phone",p:"Phone number",t:"tel"},{k:"email",p:"Email address",t:"email"}].map(({k,p,t})=>(
-                        <input key={k} value={pf[k]} onChange={e=>setPf(f=>({...f,[k]:e.target.value}))} placeholder={p} type={t}
-                          style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,
-                            fontSize:13,padding:"9px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit",marginBottom:8}}/>
-                      ))}
-                      <div style={{display:"flex",gap:8}}>
-                        <Btn v="gh" onClick={()=>{setShowP(false);setPf({name:"",phone:"",email:""}); }} sx={{flex:1}}>Cancel</Btn>
-                        <Btn v="pri" onClick={async()=>{
-                          if(!pf.name.trim()) return;
-                          const nr=[...regs,{name:pf.name.trim(),phone:pf.phone.trim(),email:pf.email.trim()}];
-                          const ng=(schedule.groupSlots||[]).map(x=>x.id===gs.id?{...x,registrants:nr}:x);
-                          const ns={...schedule,groupSlots:ng};
-                          await saveSchedule(ns); onUpdateSchedule(ns);
-                          setShowP(false); setPf({name:"",phone:"",email:""});
-                        }} dis={!pf.name.trim()} sx={{flex:2}}>Add Player</Btn>
-                      </div>
-                    </div>
-                  ):(
-                    <button onClick={()=>setShowP(true)}
-                      style={{width:"100%",padding:"8px 0",background:"transparent",marginTop:10,
-                        border:`1px dashed ${col}55`,borderRadius:8,color:col,cursor:"pointer",fontWeight:700,fontSize:12}}>
-                      + Add Player ({gs.maxPlayers-regs.length} spot{gs.maxPlayers-regs.length!==1?"s":""} left)
-                    </button>
-                  );
-                })()}
-                {isFull&&<div style={{color:C.red,fontSize:12,fontWeight:700,textAlign:"center",padding:"8px 0",marginTop:6}}>⚠ Group Full</div>}
-              </div>
-            );
-          })}
-
-          {/* Create new group */}
-          {(()=>{
-            const [showGF,setShowGF]=useState(false);
-            const [gf,setGf]=useState({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});
-            const PRESETS=["HS Boys","HS Girls","MS Boys","MS Girls","Custom..."];
-            const allDays=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-            const allTimes=[...WEEKDAY_SLOTS,...WEEKEND_SLOTS].filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>toMins(a)-toMins(b));
-            if(!showGF) return (
-              <button onClick={()=>setShowGF(true)}
-                style={{width:"100%",padding:"11px 0",background:"transparent",marginTop:4,
-                  border:`2px dashed ${C.sky}55`,borderRadius:10,color:C.sky,cursor:"pointer",
-                  fontWeight:700,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>
-                + Create New Group
-              </button>
-            );
-            return (
-              <div style={{background:C.navyMid,borderRadius:12,padding:16,border:`1px solid ${C.sky}44`,marginTop:8}}>
-                <div style={{color:C.sky,fontWeight:800,fontSize:14,marginBottom:14}}>New Group Slot</div>
-                <div style={{marginBottom:10}}>
-                  <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Group Name</div>
-                  <select value={gf.customName?"Custom...":gf.name}
-                    onChange={e=>{
-                      if(e.target.value==="Custom...") setGf(f=>({...f,customName:true,name:""}));
-                      else setGf(f=>({...f,customName:false,name:e.target.value}));
-                    }}
-                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",marginBottom:gf.customName?8:0}}>
-                    <option value="">Select group...</option>
-                    {PRESETS.map(n=><option key={n}>{n}</option>)}
-                  </select>
-                  {gf.customName&&<input value={gf.name} onChange={e=>setGf(f=>({...f,name:e.target.value}))} placeholder="Type group name..."
-                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>}
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
-                  <div>
-                    <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Day</div>
-                    <select value={gf.day} onChange={e=>setGf(f=>({...f,day:e.target.value}))}
-                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
-                      {allDays.map(d=><option key={d}>{d}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Time</div>
-                    <select value={gf.time} onChange={e=>setGf(f=>({...f,time:e.target.value}))}
-                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
-                      {allTimes.map(t=><option key={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Max Players</div>
-                    <select value={gf.maxPlayers} onChange={e=>setGf(f=>({...f,maxPlayers:e.target.value}))}
-                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
-                      {[4,5,6].map(n=><option key={n}>{n}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div style={{marginBottom:14}}>
-                  <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Recurring Until *</div>
-                  <input type="date" value={gf.endDate} onChange={e=>setGf(f=>({...f,endDate:e.target.value}))}
-                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
-                  <div style={{color:C.gray,fontSize:11,marginTop:4}}>This group recurs every {gf.day} until this date</div>
-                </div>
-                <div style={{display:"flex",gap:8}}>
-                  <Btn v="gh" onClick={()=>{setShowGF(false);setGf({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});}} sx={{flex:1}}>Cancel</Btn>
-                  <Btn v="pri" onClick={async()=>{
-                    if(!gf.name.trim()||!gf.endDate) return;
-                    const newSlot={id:Date.now(),name:gf.name.trim(),day:gf.day,time:gf.time,
-                      maxPlayers:parseInt(gf.maxPlayers),endDate:gf.endDate,registrants:[],createdAt:new Date().toISOString()};
-                    const ng=[...(schedule.groupSlots||[]),newSlot];
-                    const ns={...schedule,groupSlots:ng};
-                    await saveSchedule(ns); onUpdateSchedule(ns);
-                    setShowGF(false); setGf({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});
-                  }} dis={!gf.name.trim()||!gf.endDate} sx={{flex:2}}>✓ Create Group</Btn>
-                </div>
-              </div>
-            );
-          })()}
+          {(schedule?.groupSlots||[]).length===0&&<div style={{textAlign:"center",padding:"32px 0"}}>
+            <div style={{fontSize:36,marginBottom:10}}>👥</div>
+            <div style={{color:C.white,fontWeight:700,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:6}}>No Group Slots Yet</div>
+            <div style={{color:C.gray,fontSize:13}}>Create a group using the form below</div>
+          </div>}
+          {(schedule?.groupSlots||[]).map((gs,gi)=>(
+            <GroupSlotCard key={gs.id} gs={gs} gi={gi} schedule={schedule} onUpdateSchedule={onUpdateSchedule} showRemove={false}/>
+          ))}
+          <GroupCreateForm schedule={schedule} onUpdateSchedule={onUpdateSchedule} isCoach={true}/>
         </>}
 
       </div>
@@ -4436,145 +4275,303 @@ function fmtDate(d) {
   return d.toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"});
 }
 
+// ─── GROUP SUB-COMPONENTS (proper hooks at top level) ────────────────────────
+function GroupCreateForm({schedule, localSched, setLocalSched, onUpdateSchedule, isCoach}) {
+  const [show, setShow] = useState(false);
+  const [gf, setGf] = useState({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});
+  const PRESETS = ["HS Boys","HS Girls","MS Boys","MS Girls","Custom..."];
+  const allDays = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+  const allTimes = [...WEEKDAY_SLOTS,...WEEKEND_SLOTS].filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>toMins(a)-toMins(b));
+  const reset = () => { setShow(false); setGf({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""}); };
+  const src = isCoach ? schedule : localSched;
+  const save = async(ns) => {
+    if(isCoach) { await saveSchedule(ns); onUpdateSchedule(ns); }
+    else { if(setLocalSched) setLocalSched(ns); await saveSchedule(ns); onUpdateSchedule(ns); }
+  };
+  if (!show) return (
+    <button onClick={()=>setShow(true)}
+      style={{width:"100%",padding:"11px 0",background:"transparent",marginTop:4,
+        border:`2px dashed ${C.sky}55`,borderRadius:10,color:C.sky,cursor:"pointer",
+        fontWeight:700,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>
+      + Create New Group
+    </button>
+  );
+  return (
+    <div style={{background:C.navyMid,borderRadius:12,padding:16,border:`1px solid ${C.sky}44`,marginTop:8}}>
+      <div style={{color:C.sky,fontWeight:800,fontSize:14,marginBottom:14}}>New Group Slot</div>
+      <div style={{marginBottom:10}}>
+        <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Group Name</div>
+        <select value={gf.customName?"Custom...":gf.name}
+          onChange={e=>{ if(e.target.value==="Custom...") setGf(f=>({...f,customName:true,name:""})); else setGf(f=>({...f,customName:false,name:e.target.value})); }}
+          style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",marginBottom:gf.customName?8:0}}>
+          <option value="">Select group...</option>
+          {PRESETS.map(n=><option key={n}>{n}</option>)}
+        </select>
+        {gf.customName&&<input value={gf.name} onChange={e=>setGf(f=>({...f,name:e.target.value}))} placeholder="Type group name..."
+          style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+        {[{l:"Day",k:"day",opts:allDays},{l:"Time",k:"time",opts:allTimes},{l:"Max Players",k:"maxPlayers",opts:["4","5","6"]}].map(({l,k,opts})=>(
+          <div key={k}>
+            <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>{l}</div>
+            <select value={gf[k]} onChange={e=>setGf(f=>({...f,[k]:e.target.value}))}
+              style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
+              {opts.map(o=><option key={o}>{o}</option>)}
+            </select>
+          </div>
+        ))}
+      </div>
+      <div style={{marginBottom:14}}>
+        <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Recurring Until *</div>
+        <input type="date" value={gf.endDate} onChange={e=>setGf(f=>({...f,endDate:e.target.value}))}
+          style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+        <div style={{color:C.gray,fontSize:11,marginTop:4}}>Repeats every {gf.day} until this date</div>
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <Btn v="gh" onClick={reset} sx={{flex:1}}>Cancel</Btn>
+        <Btn v="pri" onClick={async()=>{
+          if(!gf.name.trim()||!gf.endDate) return;
+          const ns2={...(src||{}),groupSlots:[...((src?.groupSlots)||[]),{id:Date.now(),name:gf.name.trim(),day:gf.day,time:gf.time,maxPlayers:parseInt(gf.maxPlayers),endDate:gf.endDate,registrants:[],createdAt:new Date().toISOString()}]};
+          await save(ns2); reset();
+        }} dis={!gf.name.trim()||!gf.endDate} sx={{flex:2}}>✓ Create Group</Btn>
+      </div>
+    </div>
+  );
+}
+
+function AddPlayerForm({gs, schedule, onUpdateSchedule, col}) {
+  const [show, setShow] = useState(false);
+  const [pf, setPf] = useState({name:"",phone:"",email:""});
+  const regs = gs.registrants||[];
+  if (!show) return (
+    <button onClick={()=>setShow(true)}
+      style={{width:"100%",padding:"8px 0",background:"transparent",marginTop:10,
+        border:`1px dashed ${col}55`,borderRadius:8,color:col,cursor:"pointer",fontWeight:700,fontSize:12}}>
+      + Add Player ({gs.maxPlayers-regs.length} spot{gs.maxPlayers-regs.length!==1?"s":""} left)
+    </button>
+  );
+  return (
+    <div style={{background:C.navy,borderRadius:10,padding:12,marginTop:10,border:`1px solid ${col}44`}}>
+      <div style={{color:col,fontSize:11,fontWeight:700,textTransform:"uppercase",marginBottom:8}}>Add Player</div>
+      {[{k:"name",p:"Full name (required)",t:"text"},{k:"phone",p:"Phone number",t:"tel"},{k:"email",p:"Email address",t:"email"}].map(({k,p,t})=>(
+        <input key={k} value={pf[k]} onChange={e=>setPf(f=>({...f,[k]:e.target.value}))} placeholder={p} type={t}
+          style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,
+            fontSize:13,padding:"9px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit",marginBottom:8}}/>
+      ))}
+      <div style={{display:"flex",gap:8}}>
+        <Btn v="gh" onClick={()=>{setShow(false);setPf({name:"",phone:"",email:""});}} sx={{flex:1}}>Cancel</Btn>
+        <Btn v="pri" onClick={async()=>{
+          if(!pf.name.trim()) return;
+          const nr=[...regs,{name:pf.name.trim(),phone:pf.phone.trim(),email:pf.email.trim()}];
+          const ng=(schedule.groupSlots||[]).map(x=>x.id===gs.id?{...x,registrants:nr}:x);
+          const ns={...schedule,groupSlots:ng};
+          await saveSchedule(ns); onUpdateSchedule(ns);
+          setShow(false); setPf({name:"",phone:"",email:""});
+        }} dis={!pf.name.trim()} sx={{flex:2}}>Add Player</Btn>
+      </div>
+    </div>
+  );
+}
+
+function GroupSlotCard({gs, gi, schedule, onUpdateSchedule, showRemove, localSched, setLocalSched}) {
+  const regs = gs.registrants||[];
+  const isFull = regs.length>=gs.maxPlayers;
+  const isExpired = gs.endDate&&new Date(gs.endDate+"T23:59:59")<new Date();
+  const col = dc(gi);
+  const src = localSched || schedule;
+
+  const removePlayer = async(ri) => {
+    const nr = regs.filter((_,idx)=>idx!==ri);
+    const ng = (src.groupSlots||[]).map(x=>x.id===gs.id?{...x,registrants:nr}:x);
+    const ns = {...src,groupSlots:ng};
+    if(setLocalSched) setLocalSched(ns);
+    await saveSchedule(ns); onUpdateSchedule(ns);
+  };
+
+  const removeGroup = async() => {
+    const ng = (src.groupSlots||[]).filter(x=>x.id!==gs.id);
+    const ns = {...src,groupSlots:ng};
+    if(setLocalSched) setLocalSched(ns);
+    await saveSchedule(ns); onUpdateSchedule(ns);
+  };
+
+  return (
+    <div style={{background:C.navyMid,borderRadius:14,padding:18,marginBottom:14,
+      border:`1px solid ${isExpired?C.red+"44":col+"44"}`,opacity:isExpired?0.65:1}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+        <div>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <span style={{color:col,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif"}}>{gs.name}</span>
+            {isExpired&&<span style={{background:C.red+"22",color:C.red,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>Expired</span>}
+          </div>
+          <div style={{color:C.gray,fontSize:12,marginTop:3}}>Every {gs.day} · {gs.time} · 1 hour</div>
+          {gs.endDate&&<div style={{color:isExpired?C.red:C.gold,fontSize:11,fontWeight:600,marginTop:2}}>
+            {isExpired?"Ended":"Runs until"} {fmtD(gs.endDate)}
+          </div>}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{background:isFull?C.red+"22":C.green+"22",color:isFull?C.red:C.green,
+            borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700}}>{regs.length}/{gs.maxPlayers}</span>
+          {showRemove&&<button onClick={removeGroup}
+            style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
+              borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>}
+        </div>
+      </div>
+      <div style={{background:C.grayL,borderRadius:4,height:4,marginBottom:12}}>
+        <div style={{width:`${Math.min((regs.length/gs.maxPlayers)*100,100)}%`,height:"100%",
+          background:isFull?C.red:col,borderRadius:4,transition:"width 0.3s"}}/>
+      </div>
+      {regs.map((r,ri)=>(
+        <div key={ri} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:`1px solid ${C.grayL}`}}>
+          <div style={{width:24,height:24,borderRadius:"50%",background:col+"33",flexShrink:0,
+            display:"flex",alignItems:"center",justifyContent:"center",color:col,fontWeight:800,fontSize:11}}>{ri+1}</div>
+          <div style={{flex:1}}>
+            <div style={{color:C.white,fontWeight:600,fontSize:13}}>{r.name}</div>
+            <div style={{color:C.gray,fontSize:11}}>{r.phone&&`📞 ${r.phone}`}{r.phone&&r.email?" · ":""}{r.email&&`✉️ ${r.email}`}</div>
+          </div>
+          <button onClick={()=>removePlayer(ri)}
+            style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,fontWeight:700}}>✕</button>
+        </div>
+      ))}
+      {!isFull&&!isExpired&&<AddPlayerForm gs={gs} schedule={src} onUpdateSchedule={onUpdateSchedule} col={col}/>}
+      {isFull&&<div style={{color:C.red,fontSize:12,fontWeight:700,textAlign:"center",padding:"8px 0",marginTop:6}}>⚠ Group Full</div>}
+    </div>
+  );
+}
+
 // ─── PUBLIC BOOKING FORM ──────────────────────────────────────────────────────
 function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
-  const [step, setStep] = useState(1); // 1=session, 2=date/time, 3=info, 4=pay
-  const [session, setSession] = useState(null);
-  const [selDate, setSelDate] = useState(null);
-  const [selTime, setSelTime] = useState(null);
-  const [form, setForm] = useState({name:"",email:"",phone:"",payMethod:"online"});
+  const [step, setStep]           = useState(1);
+  const [session, setSession]     = useState(null);
+  const [selections, setSelections] = useState([]); // [{date, dateObj, time}]
+  const [activeDate, setActiveDate] = useState(null); // dateObj currently picking time for
+  const [form, setForm]           = useState({name:"",email:"",phone:"",payMethod:"online"});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [errors, setErrors] = useState({});
-  const upd=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const [errors, setErrors]       = useState({});
+  const upd = (k,v) => setForm(f=>({...f,[k]:v}));
 
-  const dates = getUpcomingDates(28);
+  // 60 days out
+  const dates = getUpcomingDates(60);
 
-  // Get available slots for a date
   const getSlotsForDate = (d) => {
     if(!d) return [];
     const key = dateKey(d);
     const dow = d.getDay();
-    const isWD = isWeekday(d);
-    // Mon-Fri: fixed 4-8pm unless custom availability set
-    let base = isWD ? WEEKDAY_SLOTS : [];
-    // Weekends: use coach-set availability
-    if(isWeekend(d)) {
-      base = schedule?.availability?.[DAYS_OF_WEEK[dow]] || [];
-    }
-    // Remove blocked slots
-    const blocked = (schedule?.blocked || []).filter(b=>b.date===key).map(b=>b.time);
-    // Remove already booked slots
-    const booked = bookings.filter(b=>b.date===key&&b.status!=="cancelled").map(b=>b.time);
-    return base.filter(s=>!blocked.includes(s)&&!booked.includes(s));
+    let base = isWeekday(d) ? WEEKDAY_SLOTS : (schedule?.availability?.[DAYS_OF_WEEK[dow]]||[]);
+    const blocked = (schedule?.blocked||[]).filter(b=>b.date===key).map(b=>b.time);
+    const booked  = bookings.filter(b=>b.date===key&&b.status!=="cancelled").map(b=>b.time);
+    // Also remove times already selected in current booking
+    const alreadyPicked = selections.filter(s=>s.date===key).map(s=>s.time);
+    return base.filter(s=>!blocked.includes(s)&&!booked.includes(s)&&!alreadyPicked.includes(s));
   };
 
+  const toggleTime = (d, time) => {
+    const key = dateKey(d);
+    const exists = selections.find(s=>s.date===key&&s.time===time);
+    if(exists) {
+      setSelections(prev=>prev.filter(s=>!(s.date===key&&s.time===time)));
+    } else {
+      setSelections(prev=>[...prev,{date:key,dateObj:d,dateLabel:fmtDate(d),time}]);
+    }
+  };
+
+  const isSelected = (d, time) => !!selections.find(s=>s.date===dateKey(d)&&s.time===time);
+
   const validate = () => {
-    const e = {};
+    const e={};
     if(!form.name.trim()) e.name="Name is required";
     if(!form.email.trim()||!form.email.includes("@")) e.email="Valid email is required";
     if(!form.phone.trim()) e.phone="Phone is required";
-    setErrors(e);
-    return Object.keys(e).length===0;
+    setErrors(e); return Object.keys(e).length===0;
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async() => {
     if(!validate()) return;
     setSubmitting(true);
-    const booking = {
-      id: Date.now(),
-      sessionId: session.id,
-      sessionLabel: session.label,
-      price: session.price,
-      date: dateKey(selDate),
-      dateLabel: fmtDate(selDate),
-      time: selTime,
-      clientName: form.name.trim(),
-      clientEmail: form.email.trim(),
-      clientPhone: form.phone.trim(),
-      payMethod: form.payMethod,
-      payStatus: form.payMethod==="inperson"?"pay_inperson":"unpaid",
-      status: "pending",
-      bookedAt: new Date().toISOString(),
-    };
-    await onSubmit(booking);
-
-    // Email admin
-    await sendEmail(EJS.adminTemplate, {
-      tournament_name: "Training Session Booking",
-      tournament_dates: `${booking.dateLabel} at ${booking.time}`,
-      location: "Shoebox Sports - Fenton, MI",
-      coach_name: booking.clientName,
-      coach_email: booking.clientEmail,
-      coach_phone: booking.clientPhone,
-      teams_list: `Session: ${booking.sessionLabel} ($${booking.price})\nDate: ${booking.dateLabel}\nTime: ${booking.time}\nPayment: ${booking.payMethod==="online"?"Online (Clover)":"In Person"}`,
-      team_count: "1",
-      submitted_at: new Date().toLocaleString(),
+    for(const sel of selections) {
+      const booking = {
+        id: Date.now()+Math.random(),
+        sessionId: session.id, sessionLabel: session.label, price: session.price,
+        date: sel.date, dateLabel: sel.dateLabel, time: sel.time,
+        clientName: form.name.trim(), clientEmail: form.email.trim(), clientPhone: form.phone.trim(),
+        payMethod: form.payMethod,
+        payStatus: form.payMethod==="inperson"?"pay_inperson":"unpaid",
+        status: "pending", bookedAt: new Date().toISOString(),
+      };
+      await onSubmit(booking);
+    }
+    // Email summary
+    const sessionList = selections.map(s=>`${s.dateLabel} at ${s.time}`).join(", ");
+    await sendEmail(EJS.adminTemplate,{
+      tournament_name:"Training Session Booking",
+      tournament_dates:sessionList,
+      location:"Shoebox Sports - Fenton, MI",
+      coach_name:form.name.trim(), coach_email:form.email.trim(), coach_phone:form.phone.trim(),
+      teams_list:`Session: ${session.label} ($${session.price} each)\nDates: ${sessionList}\nPayment: ${form.payMethod==="online"?"Online (Clover)":"In Person"}`,
+      team_count:String(selections.length), submitted_at:new Date().toLocaleString(),
     });
-    // Email client
-    await sendEmail(EJS.coachTemplate, {
-      coach_name: booking.clientName,
-      coach_email: booking.clientEmail,
-      tournament_name: `Training Session with ${COACH_NAME}`,
-      tournament_dates: `${booking.dateLabel} at ${booking.time}`,
-      location: "Shoebox Sports - Fenton, MI",
-      teams_list: `Session: ${booking.sessionLabel}\nDuration: 1 Hour\nPrice: $${booking.price}\nPayment: ${booking.payMethod==="online"?"Online via Clover":"In Person"}`,
-      team_count: "1",
-      payment_link: booking.payMethod==="online" ? PAYMENT_LINK : "Pay at your session",
+    await sendEmail(EJS.coachTemplate,{
+      coach_name:form.name.trim(), coach_email:form.email.trim(),
+      tournament_name:`Training Sessions with ${COACH_NAME}`,
+      tournament_dates:sessionList, location:"Shoebox Sports - Fenton, MI",
+      teams_list:`Session type: ${session.label}\nSessions booked: ${selections.length}\nTotal: $${session.price*selections.length}\nDates: ${sessionList}`,
+      team_count:String(selections.length),
+      payment_link:form.payMethod==="online"?PAYMENT_LINK:"Pay at your session",
     });
-
-    setSubmitting(false);
-    setSubmitted(true);
+    setSubmitting(false); setSubmitted(true);
   };
 
   const FErr=({k})=>errors[k]?<div style={{color:C.red,fontSize:11,marginTop:4,fontWeight:600}}>{errors[k]}</div>:null;
 
-  // Confirmation
   if(submitted) return (
     <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
       <div style={{padding:"50px 24px 24px",textAlign:"center"}}>
         <div style={{fontSize:48,marginBottom:12}}>✅</div>
-        <div style={{color:C.green,fontWeight:900,fontSize:26,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>Session Booked!</div>
+        <div style={{color:C.green,fontWeight:900,fontSize:26,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
+          {selections.length>1?`${selections.length} Sessions Booked!`:"Session Booked!"}
+        </div>
         <div style={{color:C.gray,fontSize:14,marginBottom:24,lineHeight:1.6}}>
-          Your session with <strong style={{color:C.white}}>{COACH_NAME}</strong> is confirmed for{" "}
-          <strong style={{color:C.sky}}>{fmtDate(selDate)} at {selTime}</strong>.
+          Your session{selections.length>1?"s":""} with <strong style={{color:C.white}}>{COACH_NAME}</strong> {selections.length>1?"are":"is"} confirmed.
           A confirmation was sent to <span style={{color:C.sky}}>{form.email}</span>.
         </div>
         <div style={{background:C.navyMid,borderRadius:14,padding:20,marginBottom:20,textAlign:"left",border:`1px solid ${C.green}44`}}>
           <div style={{color:C.green,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>Booking Summary</div>
-          {[
-            ["Session",session.label],
-            ["Date",fmtDate(selDate)],
-            ["Time",selTime],
-            ["Duration","1 Hour"],
-            ["Price",`$${session.price}`],
-            ["Payment",form.payMethod==="online"?"Online via Clover":"In Person"],
-          ].map(([l,v])=>(
-            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
-              <span style={{color:C.gray,fontSize:13}}>{l}</span>
-              <span style={{color:C.white,fontWeight:700,fontSize:13}}>{v}</span>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+            <span style={{color:C.gray,fontSize:13}}>Session</span>
+            <span style={{color:C.white,fontWeight:700,fontSize:13}}>{session.label}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+            <span style={{color:C.gray,fontSize:13}}>Sessions Booked</span>
+            <span style={{color:C.white,fontWeight:700,fontSize:13}}>{selections.length}</span>
+          </div>
+          {selections.map((s,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:`1px solid ${C.grayL}`}}>
+              <span style={{color:C.gray,fontSize:12}}>Session {i+1}</span>
+              <span style={{color:C.sky,fontWeight:600,fontSize:12}}>{s.dateLabel} · {s.time}</span>
             </div>
           ))}
+          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+            <span style={{color:C.gray,fontSize:13}}>Total</span>
+            <span style={{color:C.gold,fontWeight:800,fontSize:15}}>${session.price*selections.length}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+            <span style={{color:C.gray,fontSize:13}}>Payment</span>
+            <span style={{color:C.white,fontWeight:700,fontSize:13}}>{form.payMethod==="online"?"Online via Clover":"In Person"}</span>
+          </div>
         </div>
         {form.payMethod==="online"&&(
           <div style={{background:C.navyMid,borderRadius:14,padding:20,marginBottom:20,border:`1px solid ${C.gold}44`}}>
             <div style={{color:C.gold,fontWeight:800,fontSize:14,marginBottom:8}}>💰 Complete Payment</div>
             <div style={{color:C.gray,fontSize:13,marginBottom:14,lineHeight:1.5}}>
-              Pay your <strong style={{color:C.white}}>${session.price}</strong> session fee through Clover. Include your name and session date in the note.
+              Pay <strong style={{color:C.white}}>${session.price*selections.length}</strong> ({selections.length} × ${session.price}) via Clover.
             </div>
             <a href={PAYMENT_LINK} target="_blank" rel="noopener noreferrer"
-              style={{display:"inline-block",background:`linear-gradient(135deg,#00A651,#007A3D)`,
+              style={{display:"inline-block",background:"linear-gradient(135deg,#00A651,#007A3D)",
                 color:"#fff",fontWeight:800,fontSize:15,padding:"12px 28px",borderRadius:10,
                 textDecoration:"none",fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:"0.06em",textTransform:"uppercase"}}>
-              Pay Now →
+              Pay ${session.price*selections.length} Now →
             </a>
-          </div>
-        )}
-        {form.payMethod==="inperson"&&(
-          <div style={{background:C.navyMid,borderRadius:14,padding:16,marginBottom:20,border:`1px solid ${C.sky}44`}}>
-            <div style={{color:C.sky,fontSize:13,lineHeight:1.6}}>
-              💵 You've selected <strong>Pay In Person</strong>. Please bring <strong style={{color:C.white}}>${session.price} cash or card</strong> to your session.
-            </div>
           </div>
         )}
         <Btn v="pri" onClick={onBack} sx={{padding:"11px 28px"}}>← Back to Home</Btn>
@@ -4583,28 +4580,23 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
   );
 
   return (
-    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:520,margin:"0 auto"}}>
-      {/* Header */}
-      <div style={{background:`linear-gradient(135deg,${C.navyLight},${C.navyMid})`,
-        padding:"24px 20px 20px",borderBottom:`1px solid ${C.grayL}`}}>
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:560,margin:"0 auto"}}>
+      <div style={{background:`linear-gradient(135deg,${C.navyLight},${C.navyMid})`,padding:"24px 20px 20px",borderBottom:`1px solid ${C.grayL}`}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
           <div style={{fontSize:32}}>🏋️</div>
           <div>
-            <div style={{color:C.white,fontWeight:900,fontSize:22,fontFamily:"'Barlow Condensed',sans-serif"}}>
-              Training Session
-            </div>
+            <div style={{color:C.white,fontWeight:900,fontSize:22,fontFamily:"'Barlow Condensed',sans-serif"}}>Training Session</div>
             <div style={{color:C.sky,fontSize:13,fontWeight:600}}>with {COACH_NAME} · Shoebox Sports</div>
           </div>
         </div>
-        {/* Step dots */}
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          {["Session","Date & Time","Your Info","Payment"].map((s,i)=>(
-            <div key={s} style={{display:"flex",alignItems:"center",gap:6}}>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          {["Session","Dates & Times","Your Info","Payment"].map((s,i)=>(
+            <div key={s} style={{display:"flex",alignItems:"center",gap:4}}>
               <div style={{width:22,height:22,borderRadius:"50%",display:"flex",alignItems:"center",
                 justifyContent:"center",fontSize:10,fontWeight:800,
                 background:step>i+1?C.green:step===i+1?C.sky:C.grayD,
                 color:step>=i+1?"#fff":C.gray}}>{step>i+1?"✓":i+1}</div>
-              {i<3&&<div style={{width:16,height:1,background:C.grayL}}/>}
+              {i<3&&<div style={{width:12,height:1,background:C.grayL}}/>}
             </div>
           ))}
         </div>
@@ -4612,10 +4604,10 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
 
       <div style={{padding:20}}>
 
-        {/* Step 1: Session Type */}
+        {/* STEP 1 — Session Type */}
         {step===1&&<>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Choose Session Type</div>
-          <div style={{color:C.gray,fontSize:13,marginBottom:20}}>All sessions are 1 hour</div>
+          <div style={{color:C.gray,fontSize:13,marginBottom:20}}>All sessions are 1 hour · Book multiple sessions at once</div>
           {SESSIONS.map(s=>(
             <div key={s.id} onClick={()=>setSession(s)}
               style={{background:session?.id===s.id?C.sky+"22":C.navyMid,borderRadius:14,
@@ -4628,70 +4620,101 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
                 </div>
                 <div style={{textAlign:"right"}}>
                   <div style={{color:C.gold,fontWeight:900,fontSize:24,fontFamily:"'Barlow Condensed',sans-serif"}}>${s.price}</div>
-                  <div style={{color:C.gray,fontSize:11}}>per hour</div>
+                  <div style={{color:C.gray,fontSize:11}}>per session</div>
                 </div>
               </div>
               {session?.id===s.id&&<div style={{color:C.sky,fontSize:12,fontWeight:700,marginTop:10}}>✓ Selected</div>}
             </div>
           ))}
           <Btn v="pri" onClick={()=>setStep(2)} dis={!session} sx={{width:"100%",padding:"13px 0",fontSize:15,marginTop:8}}>
-            Next → Pick a Date
+            Next → Pick Dates & Times
           </Btn>
         </>}
 
-        {/* Step 2: Date & Time */}
+        {/* STEP 2 — Dates & Times (multi-select) */}
         {step===2&&<>
-          <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Pick a Date & Time</div>
-          <div style={{color:C.gray,fontSize:13,marginBottom:16}}>Mon–Fri: 4pm–8pm · Sat–Sun: varies</div>
+          <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Pick Dates & Times</div>
+          <div style={{color:C.gray,fontSize:13,marginBottom:16}}>Select as many sessions as you like · Up to 60 days out</div>
 
-          {/* Date picker */}
-          <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:12,marginBottom:16}}>
+          {/* Selected sessions summary */}
+          {selections.length>0&&(
+            <div style={{background:C.green+"18",border:`1px solid ${C.green}44`,borderRadius:12,padding:"12px 16px",marginBottom:16}}>
+              <div style={{color:C.green,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>
+                ✓ {selections.length} Session{selections.length!==1?"s":""} Selected · Total ${session.price*selections.length}
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {selections.map((s,i)=>(
+                  <div key={i} style={{background:C.green+"22",borderRadius:6,padding:"4px 10px",
+                    display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{color:C.white,fontSize:12,fontWeight:600}}>{s.dateLabel} · {s.time}</span>
+                    <button onClick={()=>toggleTime(s.dateObj,s.time)}
+                      style={{background:"transparent",border:"none",color:C.green,cursor:"pointer",fontSize:12,fontWeight:800,padding:0}}>✕</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Date strip */}
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:12,marginBottom:16}}>
             {dates.map(d=>{
               const key=dateKey(d);
               const slots=getSlotsForDate(d);
-              const hasSlots=slots.length>0;
-              const isSelected=selDate&&dateKey(selDate)===key;
-              const isSun=d.getDay()===0;
+              const selCount=selections.filter(s=>s.date===key).length;
+              const hasSlots=slots.length>0||selCount>0;
+              const isActive=activeDate&&dateKey(activeDate)===key;
+              const monthLabel=d.getDate()===1||dates.indexOf(d)===0?d.toLocaleDateString("en-US",{month:"short"}):"";
               return (
-                <div key={key} onClick={()=>{if(!hasSlots)return;setSelDate(d);setSelTime(null);}}
-                  style={{flexShrink:0,width:64,background:isSelected?C.sky:hasSlots?C.navyMid:C.grayD,
-                    borderRadius:12,padding:"10px 8px",textAlign:"center",cursor:hasSlots?"pointer":"not-allowed",
-                    border:`2px solid ${isSelected?C.sky:hasSlots?C.grayL:C.grayD}`,opacity:hasSlots?1:0.4}}>
-                  <div style={{color:isSelected?"#fff":C.gray,fontSize:10,fontWeight:700,textTransform:"uppercase"}}>
-                    {DAYS_OF_WEEK[d.getDay()].slice(0,3)}
-                  </div>
-                  <div style={{color:isSelected?"#fff":hasSlots?C.white:C.gray,fontWeight:800,fontSize:16,margin:"4px 0"}}>
-                    {d.getDate()}
-                  </div>
-                  <div style={{color:isSelected?"rgba(255,255,255,0.8)":C.gray,fontSize:9}}>
-                    {hasSlots?`${slots.length} open`:"Full"}
+                <div key={key}>
+                  {monthLabel&&<div style={{color:C.gold,fontSize:9,fontWeight:700,textTransform:"uppercase",textAlign:"center",marginBottom:2}}>{monthLabel}</div>}
+                  <div onClick={()=>{if(!hasSlots&&selCount===0)return;setActiveDate(d);}}
+                    style={{flexShrink:0,width:52,background:isActive?C.sky:selCount>0?C.green+"33":hasSlots?C.navyMid:C.grayD,
+                      borderRadius:10,padding:"8px 4px",textAlign:"center",cursor:hasSlots?"pointer":"not-allowed",
+                      border:`2px solid ${isActive?C.sky:selCount>0?C.green:hasSlots?C.grayL:C.grayD}`,
+                      opacity:hasSlots||selCount>0?1:0.35}}>
+                    <div style={{color:isActive?"#fff":selCount>0?C.green:C.gray,fontSize:9,fontWeight:700,textTransform:"uppercase"}}>
+                      {DAYS_OF_WEEK[d.getDay()].slice(0,3)}
+                    </div>
+                    <div style={{color:isActive?"#fff":C.white,fontWeight:800,fontSize:15,margin:"2px 0"}}>{d.getDate()}</div>
+                    {selCount>0
+                      ?<div style={{background:C.green,borderRadius:50,width:16,height:16,margin:"0 auto",
+                          display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:800}}>{selCount}</div>
+                      :<div style={{color:isActive?"rgba(255,255,255,0.7)":C.gray,fontSize:8}}>{hasSlots?`${slots.length}`:"–"}</div>}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Time slots */}
-          {selDate&&(()=>{
-            const slots=getSlotsForDate(selDate);
+          {/* Time slots for active date */}
+          {activeDate&&(()=>{
+            const slots=getSlotsForDate(activeDate);
+            const key=dateKey(activeDate);
             return (
-              <div style={{marginBottom:20}}>
-                <div style={{color:C.gold,fontWeight:800,fontSize:12,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:12}}>
-                  Available Times — {fmtDate(selDate)}
+              <div style={{background:C.navyMid,borderRadius:12,padding:16,marginBottom:16,border:`1px solid ${C.sky}44`}}>
+                <div style={{color:C.gold,fontWeight:800,fontSize:13,marginBottom:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                  {fmtDate(activeDate)}
                 </div>
-                {slots.length===0?(
-                  <div style={{color:C.gray,fontSize:13,textAlign:"center",padding:"20px 0"}}>No available slots for this day</div>
+                {slots.length===0&&selections.filter(s=>s.date===key).length===0?(
+                  <div style={{color:C.gray,fontSize:13,textAlign:"center",padding:"12px 0"}}>No available slots this day</div>
                 ):(
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-                    {slots.map(s=>(
-                      <button key={s} onClick={()=>setSelTime(s)}
-                        style={{padding:"12px 8px",borderRadius:10,cursor:"pointer",textAlign:"center",
-                          border:`2px solid ${selTime===s?C.sky:C.grayL}`,
-                          background:selTime===s?C.sky+"22":C.navyMid,
-                          color:selTime===s?C.sky:C.white,fontWeight:700,fontSize:13}}>
-                        {s}
-                      </button>
-                    ))}
+                    {[...WEEKDAY_SLOTS,...WEEKEND_SLOTS]
+                      .filter((v,i,a)=>a.indexOf(v)===i)
+                      .sort((a,b)=>toMins(a)-toMins(b))
+                      .filter(s=>slots.includes(s)||isSelected(activeDate,s))
+                      .map(s=>{
+                        const sel=isSelected(activeDate,s);
+                        return (
+                          <button key={s} onClick={()=>toggleTime(activeDate,s)}
+                            style={{padding:"11px 8px",borderRadius:10,cursor:"pointer",textAlign:"center",
+                              border:`2px solid ${sel?C.green:C.grayL}`,
+                              background:sel?C.green+"22":C.navy,
+                              color:sel?C.green:C.white,fontWeight:700,fontSize:13}}>
+                            {sel?"✓ ":""}{s}
+                          </button>
+                        );
+                      })}
                   </div>
                 )}
               </div>
@@ -4700,35 +4723,40 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
 
           <div style={{display:"flex",gap:10}}>
             <Btn v="gh" onClick={()=>setStep(1)} sx={{flex:1}}>← Back</Btn>
-            <Btn v="pri" onClick={()=>setStep(3)} dis={!selDate||!selTime} sx={{flex:2}}>Next → Your Info</Btn>
+            <Btn v="pri" onClick={()=>setStep(3)} dis={selections.length===0} sx={{flex:2}}>
+              Next → Your Info {selections.length>0?`(${selections.length} session${selections.length!==1?"s":""})`:""}
+            </Btn>
           </div>
         </>}
 
-        {/* Step 3: Client Info */}
+        {/* STEP 3 — Info */}
         {step===3&&<>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:16}}>Your Information</div>
-          {[
-            {k:"name",l:"Full Name *",p:"Your full name",type:"text"},
-            {k:"email",l:"Email Address *",p:"yourname@email.com",type:"email"},
-            {k:"phone",l:"Phone Number *",p:"(555) 555-5555",type:"tel"},
-          ].map(({k,l,p,type})=>(
+          {[{k:"name",l:"Full Name *",p:"Your full name",type:"text"},{k:"email",l:"Email Address *",p:"yourname@email.com",type:"email"},{k:"phone",l:"Phone Number *",p:"(555) 555-5555",type:"tel"}].map(({k,l,p,type})=>(
             <div key={k} style={{marginBottom:14}}>
               <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>{l}</div>
               <input value={form[k]} onChange={e=>upd(k,e.target.value)} placeholder={p} type={type}
                 style={{width:"100%",background:C.navyMid,border:`1px solid ${errors[k]?C.red:C.grayL}`,
-                  borderRadius:8,color:C.white,fontSize:14,padding:"11px 14px",
-                  outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+                  borderRadius:8,color:C.white,fontSize:14,padding:"11px 14px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
               <FErr k={k}/>
             </div>
           ))}
           <div style={{background:C.navyMid,borderRadius:12,padding:14,marginBottom:16,border:`1px solid ${C.grayL}`}}>
             <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:10}}>Booking Summary</div>
-            {[["Session",session?.label],["Date",fmtDate(selDate)],["Time",selTime],["Price",`$${session?.price}`]].map(([l,v])=>(
-              <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:`1px solid ${C.grayL}`}}>
-                <span style={{color:C.gray,fontSize:12}}>{l}</span>
-                <span style={{color:C.white,fontWeight:600,fontSize:12}}>{v}</span>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:`1px solid ${C.grayL}`}}>
+              <span style={{color:C.gray,fontSize:12}}>Session Type</span>
+              <span style={{color:C.white,fontWeight:600,fontSize:12}}>{session?.label}</span>
+            </div>
+            {selections.map((s,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:`1px solid ${C.grayL}`}}>
+                <span style={{color:C.gray,fontSize:12}}>Session {i+1}</span>
+                <span style={{color:C.sky,fontWeight:600,fontSize:12}}>{s.dateLabel} · {s.time}</span>
               </div>
             ))}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderTop:`1px solid ${C.grayL}`}}>
+              <span style={{color:C.gray,fontSize:12,fontWeight:700}}>Total</span>
+              <span style={{color:C.gold,fontWeight:800,fontSize:15}}>${(session?.price||0)*selections.length}</span>
+            </div>
           </div>
           <div style={{display:"flex",gap:10}}>
             <Btn v="gh" onClick={()=>setStep(2)} sx={{flex:1}}>← Back</Btn>
@@ -4736,15 +4764,11 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
           </div>
         </>}
 
-        {/* Step 4: Payment Method */}
+        {/* STEP 4 — Payment */}
         {step===4&&<>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Payment Method</div>
-          <div style={{color:C.gray,fontSize:13,marginBottom:20}}>How would you like to pay for your session?</div>
-
-          {[
-            {id:"online",icon:"💳",title:"Pay Online",desc:`Secure payment via Clover · $${session?.price}`,color:C.green},
-            {id:"inperson",icon:"💵",title:"Pay In Person",desc:`Bring cash or card to your session · $${session?.price}`,color:C.sky},
-          ].map(opt=>(
+          <div style={{color:C.gray,fontSize:13,marginBottom:20}}>Total due: <strong style={{color:C.gold}}>${(session?.price||0)*selections.length}</strong> ({selections.length} session{selections.length!==1?"s":""})</div>
+          {[{id:"online",icon:"💳",title:"Pay Online",desc:`Secure payment via Clover`,color:C.green},{id:"inperson",icon:"💵",title:"Pay In Person",desc:"Bring cash or card to your session",color:C.sky}].map(opt=>(
             <div key={opt.id} onClick={()=>upd("payMethod",opt.id)}
               style={{background:form.payMethod===opt.id?opt.color+"18":C.navyMid,borderRadius:14,
                 padding:18,marginBottom:12,cursor:"pointer",
@@ -4759,17 +4783,12 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
               </div>
             </div>
           ))}
-
           <div style={{background:C.gold+"18",border:`1px solid ${C.gold}44`,borderRadius:10,padding:"12px 14px",marginBottom:20}}>
             <div style={{color:C.gold,fontSize:12,fontWeight:700,marginBottom:2}}>📌 Note</div>
-            <div style={{color:C.gray,fontSize:12,lineHeight:1.5}}>
-              Your booking is not confirmed until payment is received. Online payments can be made immediately after booking.
-            </div>
+            <div style={{color:C.gray,fontSize:12,lineHeight:1.5}}>Sessions are confirmed after payment is received. Online payments can be made right after booking.</div>
           </div>
-
-          <Btn v="org" onClick={handleSubmit} dis={submitting}
-            sx={{width:"100%",padding:"14px 0",fontSize:15,marginBottom:10}}>
-            {submitting?"Booking...":"✓ Confirm Booking"}
+          <Btn v="org" onClick={handleSubmit} dis={submitting} sx={{width:"100%",padding:"14px 0",fontSize:15,marginBottom:10}}>
+            {submitting?"Booking...`":"✓ Confirm "+selections.length+" Session"+(selections.length!==1?"s":"")}
           </Btn>
           <Btn v="gh" onClick={()=>setStep(3)} sx={{width:"100%",padding:"11px 0"}}>← Back</Btn>
         </>}
@@ -5015,7 +5034,7 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
         {/* Recurring Weekly Hours */}
         <div style={{background:C.navyMid,borderRadius:12,padding:16,marginBottom:16,border:`1px solid ${C.grayL}`}}>
           <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>🔁 Recurring Weekly Hours</div>
-          <div style={{color:C.gray,fontSize:12,marginBottom:14}}>Mon–Fri is always 4pm–8pm. Toggle Saturday & Sunday slots below — they repeat every week automatically.</div>
+          <div style={{color:C.gray,fontSize:12,marginBottom:14}}>Mon–Fri is always 4pm–8pm. Toggle Saturday & Sunday slots — they repeat every week.</div>
           {["Saturday","Sunday"].map(day=>{
             const slots=localSched?.availability?.[day]||[];
             return (
@@ -5027,8 +5046,8 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
                     return (
                       <button key={s} onClick={()=>{
                         const cur=localSched?.availability||{};
-                        const ds=cur[day]||[];
-                        const ns2=on?ds.filter(x=>x!==s):[...ds,s].sort((a,b)=>toMins(a)-toMins(b));
+                        const ds2=cur[day]||[];
+                        const ns2=on?ds2.filter(x=>x!==s):[...ds2,s].sort((a,b)=>toMins(a)-toMins(b));
                         setLocalSched(p=>({...p,availability:{...cur,[day]:ns2}}));
                       }} style={{padding:"7px 4px",borderRadius:7,cursor:"pointer",textAlign:"center",
                         border:`2px solid ${on?C.sky:C.grayL}`,background:on?C.sky+"22":C.navy,
@@ -5049,136 +5068,12 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
         {/* Group Training Slots */}
         <div style={{background:C.navyMid,borderRadius:12,padding:16,border:`1px solid ${C.grayL}`}}>
           <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>👥 Group Training Slots</div>
-          <div style={{color:C.gray,fontSize:12,marginBottom:14}}>Create named recurring groups (e.g. "HS Boys" every Monday at 5pm). Each group recurs until the end date you set.</div>
-
-          {(localSched?.groupSlots||[]).map((gs,gi)=>{
-            const isExpired=gs.endDate&&new Date(gs.endDate+"T23:59:59")<new Date();
-            const regs=gs.registrants||[];
-            const col=dc(gi);
-            return (
-              <div key={gs.id} style={{background:C.navy,borderRadius:10,padding:14,marginBottom:10,
-                border:`1px solid ${isExpired?C.red+"44":col+"44"}`,opacity:isExpired?0.7:1}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-                  <div>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{color:col,fontWeight:800,fontSize:14}}>{gs.name}</span>
-                      {isExpired&&<span style={{background:C.red+"22",color:C.red,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>Expired</span>}
-                    </div>
-                    <div style={{color:C.gray,fontSize:12,marginTop:2}}>Every {gs.day} · {gs.time} · Max {gs.maxPlayers}</div>
-                    {gs.endDate&&<div style={{color:isExpired?C.red:C.gold,fontSize:11,fontWeight:600,marginTop:1}}>
-                      {isExpired?"Ended":"Runs until"} {fmtD(gs.endDate)}
-                    </div>}
-                  </div>
-                  <button onClick={async()=>{
-                    const ng=(localSched.groupSlots||[]).filter(x=>x.id!==gs.id);
-                    const ns={...localSched,groupSlots:ng};
-                    setLocalSched(ns); await saveSchedule(ns); onUpdateSchedule(ns);
-                  }} style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
-                    borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>
-                </div>
-                {regs.length>0&&(
-                  <div style={{borderTop:`1px solid ${C.grayL}`,paddingTop:8,marginTop:4}}>
-                    <div style={{color:C.gold,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>
-                      Players ({regs.length}/{gs.maxPlayers})
-                    </div>
-                    {regs.map((r,ri)=>(
-                      <div key={ri} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-                        padding:"4px 0",borderTop:ri>0?`1px solid ${C.grayL}`:"none"}}>
-                        <div>
-                          <span style={{color:C.white,fontSize:12,fontWeight:600}}>{r.name}</span>
-                          {r.phone&&<span style={{color:C.gray,fontSize:11,marginLeft:8}}>📞 {r.phone}</span>}
-                          {r.email&&<span style={{color:C.gray,fontSize:11,marginLeft:8}}>✉️ {r.email}</span>}
-                        </div>
-                        <button onClick={async()=>{
-                          const nr=regs.filter((_,idx)=>idx!==ri);
-                          const ng=(localSched.groupSlots||[]).map(x=>x.id===gs.id?{...x,registrants:nr}:x);
-                          const ns={...localSched,groupSlots:ng};
-                          setLocalSched(ns); await saveSchedule(ns); onUpdateSchedule(ns);
-                        }} style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Create new group form */}
-          {(()=>{
-            const [showGForm,setShowGForm]=useState(false);
-            const [gf,setGf]=useState({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});
-            const GROUP_PRESETS=["HS Boys","HS Girls","MS Boys","MS Girls","Custom..."];
-            const allDays=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-            const allTimes=[...WEEKDAY_SLOTS,...WEEKEND_SLOTS].filter((v,i,a)=>a.indexOf(v)===i).sort((a,b)=>toMins(a)-toMins(b));
-            if(!showGForm) return (
-              <button onClick={()=>setShowGForm(true)}
-                style={{width:"100%",padding:"10px 0",background:"transparent",
-                  border:`2px dashed ${C.sky}55`,borderRadius:10,color:C.sky,
-                  cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"'Barlow Condensed',sans-serif"}}>
-                + Create New Group
-              </button>
-            );
-            return (
-              <div style={{background:C.navyMid,borderRadius:10,padding:14,border:`1px solid ${C.sky}44`}}>
-                <div style={{color:C.sky,fontWeight:800,fontSize:13,marginBottom:12}}>New Group Slot</div>
-                <div style={{marginBottom:10}}>
-                  <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Group Name</div>
-                  <select value={gf.customName?"Custom...":gf.name}
-                    onChange={e=>{
-                      if(e.target.value==="Custom...") setGf(f=>({...f,customName:true,name:""}));
-                      else setGf(f=>({...f,customName:false,name:e.target.value}));
-                    }}
-                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",marginBottom:gf.customName?8:0}}>
-                    <option value="">Select group...</option>
-                    {GROUP_PRESETS.map(n=><option key={n}>{n}</option>)}
-                  </select>
-                  {gf.customName&&<input value={gf.name} onChange={e=>setGf(f=>({...f,name:e.target.value}))} placeholder="Type group name..."
-                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>}
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
-                  <div>
-                    <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Day</div>
-                    <select value={gf.day} onChange={e=>setGf(f=>({...f,day:e.target.value}))}
-                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
-                      {allDays.map(d=><option key={d}>{d}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Time</div>
-                    <select value={gf.time} onChange={e=>setGf(f=>({...f,time:e.target.value}))}
-                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
-                      {allTimes.map(t=><option key={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Max</div>
-                    <select value={gf.maxPlayers} onChange={e=>setGf(f=>({...f,maxPlayers:e.target.value}))}
-                      style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"9px 8px",outline:"none"}}>
-                      {[4,5,6].map(n=><option key={n}>{n}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div style={{marginBottom:14}}>
-                  <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Recurring Until *</div>
-                  <input type="date" value={gf.endDate} onChange={e=>setGf(f=>({...f,endDate:e.target.value}))}
-                    style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:13,padding:"10px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
-                  <div style={{color:C.gray,fontSize:11,marginTop:4}}>Group repeats every {gf.day} until this date</div>
-                </div>
-                <div style={{display:"flex",gap:8}}>
-                  <Btn v="gh" onClick={()=>{setShowGForm(false);setGf({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});}} sx={{flex:1}}>Cancel</Btn>
-                  <Btn v="pri" onClick={async()=>{
-                    if(!gf.name.trim()||!gf.endDate) return;
-                    const newSlot={id:Date.now(),name:gf.name.trim(),day:gf.day,time:gf.time,
-                      maxPlayers:parseInt(gf.maxPlayers),endDate:gf.endDate,registrants:[],createdAt:new Date().toISOString()};
-                    const ng=[...(localSched.groupSlots||[]),newSlot];
-                    const ns={...localSched,groupSlots:ng};
-                    setLocalSched(ns); await saveSchedule(ns); onUpdateSchedule(ns);
-                    setShowGForm(false); setGf({name:"",customName:false,day:"Monday",time:"4:00 PM",maxPlayers:"6",endDate:""});
-                  }} dis={!gf.name.trim()||!gf.endDate} sx={{flex:2}}>✓ Create Group</Btn>
-                </div>
-              </div>
-            );
-          })()}
+          <div style={{color:C.gray,fontSize:12,marginBottom:14}}>Named recurring groups. Each recurs until the end date you set.</div>
+          {(localSched?.groupSlots||[]).map((gs,gi)=>(
+            <GroupSlotCard key={gs.id} gs={gs} gi={gi} schedule={localSched} onUpdateSchedule={onUpdateSchedule}
+              showRemove={true} localSched={localSched} setLocalSched={setLocalSched}/>
+          ))}
+          <GroupCreateForm localSched={localSched} setLocalSched={setLocalSched} onUpdateSchedule={onUpdateSchedule} isCoach={false}/>
         </div>
       </>}
 
