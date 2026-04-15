@@ -2600,27 +2600,58 @@ function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, 
 
       <div style={{padding:22,maxWidth:900,margin:"0 auto"}}>
 
+        {/* Pending Bookings Alert */}
+        {(()=>{
+          const pending=bookings.filter(b=>b.status==="pending");
+          if(!pending.length) return null;
+          return (
+            <div style={{background:C.gold+"18",border:`1px solid ${C.gold}55`,borderRadius:12,
+              padding:"14px 18px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{fontSize:20}}>⏳</div>
+                <div>
+                  <div style={{color:C.gold,fontWeight:800,fontSize:14}}>{pending.length} Pending Booking{pending.length!==1?"s":""}</div>
+                  <div style={{color:C.gray,fontSize:12}}>Awaiting your approval</div>
+                </div>
+              </div>
+              <button onClick={()=>setTab("pending")}
+                style={{background:C.gold,border:"none",borderRadius:8,color:"#000",
+                  cursor:"pointer",fontWeight:800,fontSize:13,padding:"8px 16px",fontFamily:"'Barlow Condensed',sans-serif"}}>
+                Review →
+              </button>
+            </div>
+          );
+        })()}
+
         {/* Stats */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
           {[
-            {l:"Today",v:bookings.filter(b=>b.date===dateKey(new Date())&&b.status!=="cancelled").length,c:C.sky},
-            {l:"This Week",v:(()=>{const today=new Date();const week=getUpcomingDates(7).map(dateKey);return bookings.filter(b=>week.includes(b.date)&&b.status!=="cancelled").length;})(),c:C.gold},
-            {l:"Total Sessions",v:bookings.filter(b=>b.status!=="cancelled").length,c:C.green},
+            {l:"Today",v:bookings.filter(b=>b.date===dateKey(new Date())&&b.status==="confirmed").length,c:C.sky},
+            {l:"This Week",v:(()=>{const week=getUpcomingDates(7).map(dateKey);return bookings.filter(b=>week.includes(b.date)&&b.status==="confirmed").length;})(),c:C.gold},
+            {l:"Confirmed",v:bookings.filter(b=>b.status==="confirmed").length,c:C.green},
+            {l:"Pending",v:bookings.filter(b=>b.status==="pending").length,c:C.gold},
           ].map(({l,v,c})=>(
             <div key={l} style={{background:C.navyMid,borderRadius:12,padding:"14px 16px",
               border:`1px solid ${C.grayL}`,textAlign:"center"}}>
-              <div style={{fontSize:24,fontWeight:900,color:c,fontFamily:"'Barlow Condensed',sans-serif"}}>{v}</div>
+              <div style={{fontSize:22,fontWeight:900,color:c,fontFamily:"'Barlow Condensed',sans-serif"}}>{v}</div>
               <div style={{color:C.gray,fontSize:10,textTransform:"uppercase",letterSpacing:"0.06em",fontWeight:700,marginTop:2}}>{l}</div>
             </div>
           ))}
         </div>
 
         {/* Tabs */}
-        <div style={{display:"flex",gap:6,marginBottom:20}}>
-          {[{id:"calendar",l:"📅 My Schedule"},{id:"upcoming",l:"📋 Upcoming Sessions"},{id:"groups",l:"👥 Group Slots"}].map(t=>(
+        <div style={{display:"flex",gap:6,marginBottom:20,flexWrap:"wrap"}}>
+          {[
+            {id:"calendar",l:"📅 My Schedule"},
+            {id:"upcoming",l:"📋 Upcoming"},
+            {id:"pending",l:`⏳ Pending${bookings.filter(b=>b.status==="pending").length>0?" ("+bookings.filter(b=>b.status==="pending").length+")":""}`},
+            {id:"groups",l:"👥 Groups"},
+          ].map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",
-              border:`1px solid ${tab===t.id?C.sky:C.grayL}`,background:tab===t.id?C.sky+"22":"transparent",
-              color:tab===t.id?C.sky:C.gray,fontWeight:700,fontSize:13}}>
+              border:`1px solid ${tab===t.id?C.sky:t.id==="pending"&&bookings.filter(b=>b.status==="pending").length>0?C.gold:C.grayL}`,
+              background:tab===t.id?C.sky+"22":"transparent",
+              color:tab===t.id?C.sky:t.id==="pending"&&bookings.filter(b=>b.status==="pending").length>0?C.gold:C.gray,
+              fontWeight:700,fontSize:13}}>
               {t.l}
             </button>
           ))}
@@ -2789,6 +2820,105 @@ function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, 
             ));
           })()}
         </>}
+
+        {/* ── PENDING TAB ── */}
+        {tab==="pending"&&(()=>{
+          const pending=bookings.filter(b=>b.status==="pending")
+            .sort((a,b)=>a.bookedAt?.localeCompare(b.bookedAt));
+          const [declineId,setDeclineId]=useState(null);
+          const [declineMsg,setDeclineMsg]=useState("");
+
+          const approve=async(b)=>{
+            const updated={...b,status:"confirmed"};
+            await updateBooking(updated); onUpdateBooking(updated,"update");
+            // Email client
+            await sendEmail(EJS.coachTemplate,{
+              coach_name:b.clientName, coach_email:b.clientEmail,
+              tournament_name:`Training Session Confirmed — ${COACH_NAME}`,
+              tournament_dates:b.dateLabel?`${b.dateLabel} at ${b.time}`:`${b.groupName||""} at ${b.time}`,
+              location:"Shoebox Sports - Fenton, MI",
+              teams_list:`Your booking has been APPROVED ✓\nSession: ${b.sessionLabel}\nDate: ${b.dateLabel||"Recurring"} at ${b.time}`,
+              team_count:"1", payment_link:b.payMethod==="online"?PAYMENT_LINK:"Pay at your session",
+            });
+          };
+
+          const decline=async(b,msg)=>{
+            const updated={...b,status:"declined",declineReason:msg};
+            await updateBooking(updated); onUpdateBooking(updated,"update");
+            // Email client with reason
+            await sendEmail(EJS.coachTemplate,{
+              coach_name:b.clientName, coach_email:b.clientEmail,
+              tournament_name:`Booking Update — ${COACH_NAME}`,
+              tournament_dates:b.dateLabel?`${b.dateLabel} at ${b.time}`:`${b.time}`,
+              location:"Shoebox Sports - Fenton, MI",
+              teams_list:`Your booking request was DECLINED.\nSession: ${b.sessionLabel}\nDate: ${b.dateLabel||"Recurring"} at ${b.time}${msg?`\nReason: ${msg}`:""}`,
+              team_count:"1", payment_link:"N/A",
+            });
+            setDeclineId(null); setDeclineMsg("");
+          };
+
+          if(!pending.length) return (
+            <div style={{textAlign:"center",padding:"40px 0"}}>
+              <div style={{fontSize:36,marginBottom:12}}>✅</div>
+              <div style={{color:C.white,fontWeight:700,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>All Caught Up!</div>
+              <div style={{color:C.gray,fontSize:13}}>No pending bookings to review</div>
+            </div>
+          );
+
+          return (
+            <div>
+              {pending.map(b=>(
+                <div key={b.id} style={{background:C.navyMid,borderRadius:14,padding:18,marginBottom:12,
+                  border:`1px solid ${C.gold}44`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10,marginBottom:12}}>
+                    <div>
+                      <div style={{color:C.white,fontWeight:700,fontSize:16}}>{b.clientName}</div>
+                      <div style={{color:C.gold,fontSize:13,fontWeight:600,marginTop:2}}>{b.sessionLabel}</div>
+                      <div style={{color:C.gray,fontSize:12,marginTop:2}}>
+                        {b.dateLabel?`${b.dateLabel} at ${b.time}`:`Every ${b.groupName||""} at ${b.time}`}
+                      </div>
+                      {b.clientPhone&&<div style={{color:C.sky,fontSize:12,marginTop:4}}>📞 {b.clientPhone}</div>}
+                      {b.clientEmail&&<div style={{color:C.gray,fontSize:11,marginTop:1}}>✉️ {b.clientEmail}</div>}
+                      <div style={{color:C.gray,fontSize:11,marginTop:4}}>
+                        Requested {b.bookedAt?new Date(b.bookedAt).toLocaleDateString("en-US",{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}):""}
+                      </div>
+                    </div>
+                    <Badge c={C.gold}>⏳ Pending</Badge>
+                  </div>
+
+                  {declineId===b.id?(
+                    <div style={{background:C.navy,borderRadius:10,padding:12,border:`1px solid ${C.red}44`}}>
+                      <div style={{color:C.red,fontSize:12,fontWeight:700,marginBottom:8}}>Reason for declining (optional)</div>
+                      <textarea value={declineMsg} onChange={e=>setDeclineMsg(e.target.value)}
+                        placeholder="e.g. Slot no longer available, please rebook for another time..."
+                        rows={3}
+                        style={{width:"100%",background:C.navyMid,border:`1px solid ${C.grayL}`,borderRadius:8,
+                          color:C.white,fontSize:13,padding:"10px 12px",outline:"none",
+                          boxSizing:"border-box",fontFamily:"inherit",resize:"none"}}/>
+                      <div style={{display:"flex",gap:8,marginTop:10}}>
+                        <Btn v="gh" onClick={()=>{setDeclineId(null);setDeclineMsg("");}} sx={{flex:1}}>Cancel</Btn>
+                        <Btn v="danger" onClick={()=>decline(b,declineMsg)} sx={{flex:2}}>Send Decline</Btn>
+                      </div>
+                    </div>
+                  ):(
+                    <div style={{display:"flex",gap:8}}>
+                      <button onClick={()=>{setDeclineId(b.id);setDeclineMsg("");}}
+                        style={{flex:1,padding:"10px 0",background:C.red+"22",border:`1px solid ${C.red}44`,
+                          color:C.red,borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>
+                        ✕ Decline
+                      </button>
+                      <button onClick={()=>approve(b)}
+                        style={{flex:2,padding:"10px 0",background:`linear-gradient(135deg,${C.green},#007A3D)`,
+                          border:"none",color:"#fff",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13}}>
+                        ✓ Approve
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {/* ── GROUPS TAB ── */}
         {tab==="groups"&&<>
@@ -4467,11 +4597,25 @@ function AddPlayerForm({gs, schedule, onUpdateSchedule, col}) {
 }
 
 function GroupSlotCard({gs, gi, schedule, onUpdateSchedule, showRemove, localSched, setLocalSched}) {
+  const [editing, setEditing] = useState(false);
+  const [ef, setEf] = useState({name:gs.name,day:gs.day,time:gs.time,maxPlayers:String(gs.maxPlayers),endDate:gs.endDate||""});
   const regs = gs.registrants||[];
   const isFull = regs.length>=gs.maxPlayers;
   const isExpired = gs.endDate&&new Date(gs.endDate+"T23:59:59")<new Date();
   const col = dc(gi);
   const src = localSched || schedule;
+  const allDays = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+  const allTimes = buildSlots("6:00 AM", 61, 15);
+
+  const saveEdit = async() => {
+    const updated = {...gs, name:ef.name.trim(), day:ef.day, time:ef.time,
+      maxPlayers:parseInt(ef.maxPlayers), endDate:ef.endDate};
+    const ng = (src.groupSlots||[]).map(x=>x.id===gs.id?updated:x);
+    const ns = {...src, groupSlots:ng};
+    if(setLocalSched) setLocalSched(ns);
+    await saveSchedule(ns); onUpdateSchedule(ns);
+    setEditing(false);
+  };
 
   const removePlayer = async(ri) => {
     const nr = regs.filter((_,idx)=>idx!==ri);
@@ -4482,6 +4626,7 @@ function GroupSlotCard({gs, gi, schedule, onUpdateSchedule, showRemove, localSch
   };
 
   const removeGroup = async() => {
+    if(!window.confirm(`Remove group "${gs.name}"?`)) return;
     const ng = (src.groupSlots||[]).filter(x=>x.id!==gs.id);
     const ns = {...src,groupSlots:ng};
     if(setLocalSched) setLocalSched(ns);
@@ -4491,43 +4636,83 @@ function GroupSlotCard({gs, gi, schedule, onUpdateSchedule, showRemove, localSch
   return (
     <div style={{background:C.navyMid,borderRadius:14,padding:18,marginBottom:14,
       border:`1px solid ${isExpired?C.red+"44":col+"44"}`,opacity:isExpired?0.65:1}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+
+      {/* Edit form */}
+      {editing?(
         <div>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <span style={{color:col,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif"}}>{gs.name}</span>
-            {isExpired&&<span style={{background:C.red+"22",color:C.red,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>Expired</span>}
+          <div style={{color:col,fontWeight:800,fontSize:13,marginBottom:12}}>Edit Group</div>
+          <div style={{marginBottom:10}}>
+            <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Group Name</div>
+            <input value={ef.name} onChange={e=>setEf(f=>({...f,name:e.target.value}))}
+              style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,
+                fontSize:13,padding:"9px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
           </div>
-          <div style={{color:C.gray,fontSize:12,marginTop:3}}>Every {gs.day} · {gs.time} · 1 hour</div>
-          {gs.endDate&&<div style={{color:isExpired?C.red:C.gold,fontSize:11,fontWeight:600,marginTop:2}}>
-            {isExpired?"Ended":"Runs until"} {fmtD(gs.endDate)}
-          </div>}
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{background:isFull?C.red+"22":C.green+"22",color:isFull?C.red:C.green,
-            borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700}}>{regs.length}/{gs.maxPlayers}</span>
-          {showRemove&&<button onClick={removeGroup}
-            style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
-              borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>}
-        </div>
-      </div>
-      <div style={{background:C.grayL,borderRadius:4,height:4,marginBottom:12}}>
-        <div style={{width:`${Math.min((regs.length/gs.maxPlayers)*100,100)}%`,height:"100%",
-          background:isFull?C.red:col,borderRadius:4,transition:"width 0.3s"}}/>
-      </div>
-      {regs.map((r,ri)=>(
-        <div key={ri} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:`1px solid ${C.grayL}`}}>
-          <div style={{width:24,height:24,borderRadius:"50%",background:col+"33",flexShrink:0,
-            display:"flex",alignItems:"center",justifyContent:"center",color:col,fontWeight:800,fontSize:11}}>{ri+1}</div>
-          <div style={{flex:1}}>
-            <div style={{color:C.white,fontWeight:600,fontSize:13}}>{r.name}</div>
-            <div style={{color:C.gray,fontSize:11}}>{r.phone&&`📞 ${r.phone}`}{r.phone&&r.email?" · ":""}{r.email&&`✉️ ${r.email}`}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+            {[{l:"Day",k:"day",opts:allDays},{l:"Time",k:"time",opts:allTimes},{l:"Max Players",k:"maxPlayers",opts:["4","5","6"]}].map(({l,k,opts})=>(
+              <div key={k}>
+                <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>{l}</div>
+                <select value={ef[k]} onChange={e=>setEf(f=>({...f,[k]:e.target.value}))}
+                  style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,fontSize:12,padding:"8px 6px",outline:"none"}}>
+                  {opts.map(o=><option key={o}>{o}</option>)}
+                </select>
+              </div>
+            ))}
           </div>
-          <button onClick={()=>removePlayer(ri)}
-            style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,fontWeight:700}}>✕</button>
+          <div style={{marginBottom:12}}>
+            <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:5}}>Recurring Until</div>
+            <input type="date" value={ef.endDate} onChange={e=>setEf(f=>({...f,endDate:e.target.value}))}
+              style={{width:"100%",background:C.navy,border:`1px solid ${C.grayL}`,borderRadius:8,color:C.white,
+                fontSize:13,padding:"9px 12px",outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <Btn v="gh" onClick={()=>setEditing(false)} sx={{flex:1}}>Cancel</Btn>
+            <Btn v="pri" onClick={saveEdit} dis={!ef.name.trim()||!ef.endDate} sx={{flex:2}}>Save Changes</Btn>
+          </div>
         </div>
-      ))}
-      {!isFull&&!isExpired&&<AddPlayerForm gs={gs} schedule={src} onUpdateSchedule={onUpdateSchedule} col={col}/>}
-      {isFull&&<div style={{color:C.red,fontSize:12,fontWeight:700,textAlign:"center",padding:"8px 0",marginTop:6}}>⚠ Group Full</div>}
+      ):(
+        <>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{color:col,fontWeight:800,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif"}}>{gs.name}</span>
+                {isExpired&&<span style={{background:C.red+"22",color:C.red,borderRadius:4,padding:"1px 7px",fontSize:10,fontWeight:700}}>Expired</span>}
+              </div>
+              <div style={{color:C.gray,fontSize:12,marginTop:3}}>Every {gs.day} · {gs.time} · 1 hour</div>
+              {gs.endDate&&<div style={{color:isExpired?C.red:C.gold,fontSize:11,fontWeight:600,marginTop:2}}>
+                {isExpired?"Ended":"Runs until"} {fmtD(gs.endDate)}
+              </div>}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{background:isFull?C.red+"22":C.green+"22",color:isFull?C.red:C.green,
+                borderRadius:6,padding:"3px 10px",fontSize:12,fontWeight:700}}>{regs.length}/{gs.maxPlayers}</span>
+              <button onClick={()=>setEditing(true)}
+                style={{background:C.sky+"22",border:`1px solid ${C.sky}44`,color:C.sky,
+                  borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>✏️ Edit</button>
+              {showRemove&&<button onClick={removeGroup}
+                style={{background:C.red+"22",border:`1px solid ${C.red}44`,color:C.red,
+                  borderRadius:6,padding:"3px 10px",cursor:"pointer",fontSize:11,fontWeight:700}}>✕</button>}
+            </div>
+          </div>
+          <div style={{background:C.grayL,borderRadius:4,height:4,marginBottom:12}}>
+            <div style={{width:`${Math.min((regs.length/gs.maxPlayers)*100,100)}%`,height:"100%",
+              background:isFull?C.red:col,borderRadius:4,transition:"width 0.3s"}}/>
+          </div>
+          {regs.map((r,ri)=>(
+            <div key={ri} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderTop:`1px solid ${C.grayL}`}}>
+              <div style={{width:24,height:24,borderRadius:"50%",background:col+"33",flexShrink:0,
+                display:"flex",alignItems:"center",justifyContent:"center",color:col,fontWeight:800,fontSize:11}}>{ri+1}</div>
+              <div style={{flex:1}}>
+                <div style={{color:C.white,fontWeight:600,fontSize:13}}>{r.name}</div>
+                <div style={{color:C.gray,fontSize:11}}>{r.phone&&`📞 ${r.phone}`}{r.phone&&r.email?" · ":""}{r.email&&`✉️ ${r.email}`}</div>
+              </div>
+              <button onClick={()=>removePlayer(ri)}
+                style={{background:"transparent",border:"none",color:C.red,cursor:"pointer",fontSize:14,fontWeight:700}}>✕</button>
+            </div>
+          ))}
+          {!isFull&&!isExpired&&<AddPlayerForm gs={gs} schedule={src} onUpdateSchedule={onUpdateSchedule} col={col}/>}
+          {isFull&&<div style={{color:C.red,fontSize:12,fontWeight:700,textAlign:"center",padding:"8px 0",marginTop:6}}>⚠ Group Full</div>}
+        </>
+      )}
     </div>
   );
 }
@@ -4554,12 +4739,26 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
     return new Date(gs.endDate+"T23:59:59") >= new Date();
   });
 
-  // Get group times that should be blocked on a given date (by day of week)
+  // Get times that conflict with group sessions on a given date.
+  // A 1-on-1 slot conflicts if:
+  //   - It starts within 60 min BEFORE a group (would still be running when group starts)
+  //   - It starts at the same time as a group
   const getGroupBlockedTimes = (d) => {
-    const dow = DAYS_OF_WEEK[d.getDay()]; // e.g. "Monday"
-    return activeGroups
+    const dow = DAYS_OF_WEEK[d.getDay()];
+    const groupTimes = activeGroups
       .filter(gs=>gs.day===dow)
-      .map(gs=>gs.time);
+      .map(gs=>toMins(gs.time));
+    const allPossible = [...WEEKDAY_SLOTS,...WEEKEND_SLOTS]
+      .filter((v,i,a)=>a.indexOf(v)===i);
+    return allPossible.filter(slot=>{
+      const slotMins = toMins(slot);
+      return groupTimes.some(gMins=>
+        // slot starts within 60 min before group (would overlap)
+        (slotMins > gMins - 60 && slotMins < gMins) ||
+        // slot starts exactly at group time
+        slotMins === gMins
+      );
+    });
   };
 
   const getSlotsForDate = (d) => {
@@ -4675,12 +4874,12 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
       <div style={{padding:"50px 24px 24px",textAlign:"center"}}>
         <div style={{fontSize:48,marginBottom:12}}>✅</div>
         <div style={{color:C.green,fontWeight:900,fontSize:26,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:8}}>
-          {session?.id==="group"?`You've Joined ${selectedGroup?.name}!`:selections.length>1?`${selections.length} Sessions Booked!`:"Session Booked!"}
+          {session?.id==="group"?`You've Joined ${selectedGroup?.name}!`:"Booking Request Sent!"}
         </div>
         <div style={{color:C.gray,fontSize:14,marginBottom:24,lineHeight:1.6}}>
           {session?.id==="group"
             ? <>You're registered for <strong style={{color:C.white}}>{selectedGroup?.name}</strong> every <strong style={{color:C.sky}}>{selectedGroup?.day} at {selectedGroup?.time}</strong>.</>
-            : <>Your session{selections.length>1?"s":""} with <strong style={{color:C.white}}>{COACH_NAME}</strong> {selections.length>1?"are":"is"} confirmed.</>}
+            : <><strong style={{color:C.white}}>{COACH_NAME}</strong> will review your request and confirm shortly.</>}
           {" "}A confirmation was sent to <span style={{color:C.sky}}>{form.email}</span>.
         </div>
         <div style={{background:C.navyMid,borderRadius:14,padding:20,marginBottom:20,textAlign:"left",border:`1px solid ${C.green}44`}}>
@@ -5034,7 +5233,7 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
           ))}
           <div style={{background:C.gold+"18",border:`1px solid ${C.gold}44`,borderRadius:10,padding:"12px 14px",marginBottom:20}}>
             <div style={{color:C.gold,fontSize:12,fontWeight:700,marginBottom:2}}>📌 Note</div>
-            <div style={{color:C.gray,fontSize:12,lineHeight:1.5}}>Sessions are confirmed after payment is received. Online payments can be made right after booking.</div>
+            <div style={{color:C.gray,fontSize:12,lineHeight:1.5}}>Your request will be reviewed by {COACH_NAME}. You'll receive a confirmation email once approved. Payment is due after approval.</div>
           </div>
           <Btn v="org" onClick={handleSubmit} dis={submitting} sx={{width:"100%",padding:"14px 0",fontSize:15,marginBottom:10}}>
             {submitting?"Booking..."
