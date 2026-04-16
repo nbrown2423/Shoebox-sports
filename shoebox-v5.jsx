@@ -3582,8 +3582,8 @@ const PAYMENT_LABEL = "theshoeboxsports.cloveronline.com";
 // ─── EMAILJS CONFIG ───────────────────────────────────────────────────────────
 const EJS = {
   serviceId:      "service_5zrpxvj",
-  adminTemplate:  "template_yykska3",   // → Info@theshoeboxsports.com
-  coachTemplate:  "template_xzsta4c",   // → coach's email
+  adminTemplate:  "template_l2hcfe7",   // → Info@theshoeboxsports.com (Coach Star/Admin)
+  coachTemplate:  "template_yykska3",   // → customer's email
   publicKey:      "iFaGCl_1cFBylbGdi",
 };
 
