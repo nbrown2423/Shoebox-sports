@@ -2520,9 +2520,12 @@ function PendingBookings({bookings, onUpdateBooking}) {
     await updateBooking(updated);
     onUpdateBooking(updated, "update");
     await sendEmail(EJS.approvedTemplate, {
+      coach_name: b.clientName,
+      coach_email: b.clientEmail,
+      tournament_name: b.sessionLabel,
       tournament_dates: b.dateLabel ? `${b.dateLabel} at ${b.time}` : `${b.groupName||""} at ${b.time}`,
       location: "Shoebox Sports - Fenton, MI",
-      teams_list: `✓ Your booking has been APPROVED!\nSession: ${b.sessionLabel}\nDate: ${b.dateLabel||"Recurring"} at ${b.time}\nSee you there!`,
+      teams_list: `Session: ${b.sessionLabel}\nDate: ${b.dateLabel||"Recurring"} at ${b.time}\nPayment: ${b.payMethod==="online"?"Online via Clover":"Pay in person"}`,
       team_count: "1",
       payment_link: b.payMethod==="online" ? PAYMENT_LINK : "Pay at your session",
     });
