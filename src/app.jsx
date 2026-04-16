@@ -4059,12 +4059,10 @@ function AdminRegistrations({tournament, onUpdateTournament}) {
   };
 
   const approveAndAdd=(reg)=>{
-    // Use unique ID with random to avoid collisions
     const teamId = Date.now() + Math.floor(Math.random()*10000);
     const regId  = Date.now() + Math.floor(Math.random()*10000) + 1;
+    const is3v3  = tournament.type==="3v3";
 
-    // For 3v3 tournaments match on gradeId only (no gender field)
-    const is3v3 = tournament.type==="3v3";
     let divisions=[...tournament.divisions];
     let div = is3v3
       ? divisions.find(d=>d.gradeId===reg.gradeId)
@@ -4083,29 +4081,33 @@ function AdminRegistrations({tournament, onUpdateTournament}) {
       divisions=[...divisions,div];
     }
 
-    // Assign to pool — balance A and B for 3v3
-    let pool="A";
-    if(is3v3){
-      const poolA=div.teams.filter(t=>t.pool==="A").length;
-      const poolB=div.teams.filter(t=>t.pool==="B").length;
-      pool=poolA<=poolB?"A":"B";
-    }
+    // Find first empty placeholder slot in this division
+    const emptySlotIdx = div.teams.findIndex(t=>!t.name||t.name.trim()==="");
 
-    const newTeam={
-      id:teamId,
-      name:reg.teamName,
-      pool,
-      wins:0,losses:0,pf:0,pa:0,
-      players:reg.players||[],
-    };
+    let updatedTeams;
+    if(emptySlotIdx>=0){
+      // Fill the existing empty slot
+      updatedTeams = div.teams.map((t,i)=>i===emptySlotIdx
+        ? {...t, name:reg.teamName, players:reg.players||[]}
+        : t
+      );
+    } else {
+      // No empty slot — assign pool balance for 3v3, pool A for 5v5
+      let pool="A";
+      if(is3v3){
+        const poolA=div.teams.filter(t=>t.pool==="A").length;
+        const poolB=div.teams.filter(t=>t.pool==="B").length;
+        pool=poolA<=poolB?"A":"B";
+      }
+      const newTeam={id:teamId,name:reg.teamName,pool,wins:0,losses:0,pf:0,pa:0,players:reg.players||[]};
+      updatedTeams=[...div.teams,newTeam];
+    }
 
     const updated={
       ...tournament,
-      divisions:divisions.map(d=>d.id===div.id
-        ?{...d,teams:[...d.teams,newTeam]}
-        :d),
+      divisions:divisions.map(d=>d.id===div.id?{...d,teams:updatedTeams}:d),
       registrations:(tournament.registrations||[]).map(r=>
-        r.id===reg.id?{...r,status:"approved",teamId:teamId}:r),
+        r.id===reg.id?{...r,status:"approved",teamId:emptySlotIdx>=0?div.teams[emptySlotIdx].id:teamId}:r),
     };
     onUpdateTournament(updated);
   };
