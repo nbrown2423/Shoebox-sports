@@ -5097,38 +5097,42 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
             </div>
           )}
 
-          {/* Date strip — negative margins to break out of parent padding for full-width scroll */}
-          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:12,paddingLeft:20,paddingRight:20,
-            marginLeft:-20,marginRight:-20,marginBottom:16,
-            WebkitOverflowScrolling:"touch",scrollbarWidth:"none"}}>
-            <style>{`div::-webkit-scrollbar{display:none}`}</style>
-            {dates.map(d=>{
-              const key=dateKey(d);
-              const slots=getSlotsForDate(d);
-              const selCount=selections.filter(s=>s.date===key).length;
-              const hasSlots=slots.length>0||selCount>0;
-              const isActive=activeDate&&dateKey(activeDate)===key;
-              const monthLabel=d.getDate()===1||dates.indexOf(d)===0?d.toLocaleDateString("en-US",{month:"short"}):"";
-              return (
-                <div key={key}>
-                  {monthLabel&&<div style={{color:C.gold,fontSize:9,fontWeight:700,textTransform:"uppercase",textAlign:"center",marginBottom:2}}>{monthLabel}</div>}
-                  <div onClick={()=>{if(!hasSlots&&selCount===0)return;setActiveDate(d);}}
-                    style={{flexShrink:0,width:52,background:isActive?C.sky:selCount>0?C.green+"33":hasSlots?C.navyMid:C.grayD,
-                      borderRadius:10,padding:"8px 4px",textAlign:"center",cursor:hasSlots?"pointer":"not-allowed",
+          {/* Date strip */}
+          <div style={{overflowX:"auto",marginLeft:-20,marginRight:-20,marginBottom:16,
+            WebkitOverflowScrolling:"touch"}}>
+            <div style={{display:"flex",gap:8,paddingLeft:20,paddingRight:20,paddingBottom:8,
+              width:"max-content"}}>
+              {dates.map(d=>{
+                const key=dateKey(d);
+                const slots=getSlotsForDate(d);
+                const selCount=selections.filter(s=>s.date===key).length;
+                const hasSlots=slots.length>0||selCount>0;
+                const isActive=activeDate&&dateKey(activeDate)===key;
+                const isFirstOfMonth=d.getDate()===1||dates.indexOf(d)===0;
+                const monthLabel=isFirstOfMonth?d.toLocaleDateString("en-US",{month:"short"}):"";
+                return (
+                  <div key={key} style={{flexShrink:0,textAlign:"center",cursor:hasSlots?"pointer":"default"}}
+                    onClick={()=>{if(!hasSlots&&selCount===0)return;setActiveDate(d);}}>
+                    {monthLabel
+                      ?<div style={{color:C.gold,fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{monthLabel}</div>
+                      :<div style={{height:14}}/>}
+                    <div style={{width:54,background:isActive?C.sky:selCount>0?C.green+"33":hasSlots?C.navyMid:C.grayD,
+                      borderRadius:10,padding:"9px 4px",
                       border:`2px solid ${isActive?C.sky:selCount>0?C.green:hasSlots?C.grayL:C.grayD}`,
                       opacity:hasSlots||selCount>0?1:0.35}}>
-                    <div style={{color:isActive?"#fff":selCount>0?C.green:C.gray,fontSize:9,fontWeight:700,textTransform:"uppercase"}}>
-                      {DAYS_OF_WEEK[d.getDay()].slice(0,3)}
+                      <div style={{color:isActive?"#fff":selCount>0?C.green:C.gray,fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>
+                        {DAYS_OF_WEEK[d.getDay()].slice(0,3)}
+                      </div>
+                      <div style={{color:isActive?"#fff":C.white,fontWeight:800,fontSize:16,margin:"2px 0"}}>{d.getDate()}</div>
+                      {selCount>0
+                        ?<div style={{background:C.green,borderRadius:50,width:16,height:16,margin:"2px auto 0",
+                            display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:800}}>{selCount}</div>
+                        :<div style={{color:isActive?"rgba(255,255,255,0.7)":C.gray,fontSize:9,marginTop:2}}>{hasSlots?`${slots.length} open`:"–"}</div>}
                     </div>
-                    <div style={{color:isActive?"#fff":C.white,fontWeight:800,fontSize:15,margin:"2px 0"}}>{d.getDate()}</div>
-                    {selCount>0
-                      ?<div style={{background:C.green,borderRadius:50,width:16,height:16,margin:"0 auto",
-                          display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:800}}>{selCount}</div>
-                      :<div style={{color:isActive?"rgba(255,255,255,0.7)":C.gray,fontSize:8}}>{hasSlots?`${slots.length}`:"–"}</div>}
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
 
           {/* Time slots for active date */}
