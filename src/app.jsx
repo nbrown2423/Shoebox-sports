@@ -3504,44 +3504,48 @@ async function loadFromDB() {
   return { tournaments: rows.map(r => r.data) };
 }
 
-async function saveTournamentToDB(tournament) {
-  await sbFetch("/tournaments", {
-    method: "POST",
-    prefer: "resolution=merge-duplicates",
-    headers: { "Prefer": "resolution=merge-duplicates" },
-    body: JSON.stringify({ id: tournament.id, data: tournament }),
-  });
-}
-
 async function updateTournamentInDB(tournament) {
-  await sbFetch(`/tournaments?id=eq.${tournament.id}`, {
+  const res = await sbSecure(`/tournaments?id=eq.${tournament.id}`, {
     method: "PATCH",
     body: JSON.stringify({ data: tournament }),
+    prefer: "return=minimal",
   });
+  if(res===null) console.error("updateTournamentInDB failed for id:", tournament.id);
+  return res;
+}
+
+async function saveTournamentToDB(tournament) {
+  const res = await sbSecure("/tournaments", {
+    method: "POST",
+    body: JSON.stringify({ id: tournament.id, data: tournament }),
+    prefer: "resolution=merge-duplicates",
+  });
+  if(res===null) console.error("saveTournamentToDB failed for id:", tournament.id);
+  return res;
 }
 
 async function loadRegistrations() {
-  const rows = await sbFetch("/registrations?select=*&order=created_at.asc");
+  const rows = await sbSecure("/registrations?select=*&order=created_at.asc");
   return rows || [];
 }
 
 async function saveRegistration(reg) {
-  await sbFetch("/registrations", {
+  await sbSecure("/registrations", {
     method: "POST",
-    headers: { "Prefer": "resolution=merge-duplicates" },
     body: JSON.stringify({ id: reg.id, data: reg }),
+    prefer: "resolution=merge-duplicates",
   });
 }
 
 async function updateRegistration(reg) {
-  await sbFetch(`/registrations?id=eq.${reg.id}`, {
+  await sbSecure(`/registrations?id=eq.${reg.id}`, {
     method: "PATCH",
     body: JSON.stringify({ data: reg }),
   });
 }
 
 async function deleteRegistration(id) {
-  await sbFetch(`/registrations?id=eq.${id}`, { method: "DELETE" });
+  await sbSecure(`/registrations?id=eq.${id}`, { method: "DELETE" });
 }
 
 // Bookings — use service role for all operations (data is protected)
@@ -4055,19 +4059,53 @@ function AdminRegistrations({tournament, onUpdateTournament}) {
   };
 
   const approveAndAdd=(reg)=>{
-    // Find matching division — create one if it doesn't exist yet
+    // Use unique ID with random to avoid collisions
+    const teamId = Date.now() + Math.floor(Math.random()*10000);
+    const regId  = Date.now() + Math.floor(Math.random()*10000) + 1;
+
+    // For 3v3 tournaments match on gradeId only (no gender field)
+    const is3v3 = tournament.type==="3v3";
     let divisions=[...tournament.divisions];
-    let div=divisions.find(d=>d.gradeId===reg.gradeId&&d.gender===reg.gender);
+    let div = is3v3
+      ? divisions.find(d=>d.gradeId===reg.gradeId)
+      : divisions.find(d=>d.gradeId===reg.gradeId&&d.gender===reg.gender);
+
     if(!div){
       // Auto-create the division
-      div={id:`div-${Date.now()}`,gradeId:reg.gradeId,gender:reg.gender,teams:[],capacity:8};
+      if(is3v3){
+        const divDef=THREEV3_DIVISIONS.find(d=>d.id===reg.gradeId);
+        div={id:`div-${regId}`,gradeId:reg.gradeId,gender:"",
+          label:divDef?.label||reg.gradeId,color:divDef?.color||C.sky,
+          type:"3v3",teams:[],capacity:8};
+      } else {
+        div={id:`div-${regId}`,gradeId:reg.gradeId,gender:reg.gender,teams:[],capacity:8};
+      }
       divisions=[...divisions,div];
     }
-    const newTeam={id:Date.now(),name:reg.teamName,pool:"A",wins:0,losses:0,pf:0,pa:0};
+
+    // Assign to pool — balance A and B for 3v3
+    let pool="A";
+    if(is3v3){
+      const poolA=div.teams.filter(t=>t.pool==="A").length;
+      const poolB=div.teams.filter(t=>t.pool==="B").length;
+      pool=poolA<=poolB?"A":"B";
+    }
+
+    const newTeam={
+      id:teamId,
+      name:reg.teamName,
+      pool,
+      wins:0,losses:0,pf:0,pa:0,
+      players:reg.players||[],
+    };
+
     const updated={
       ...tournament,
-      divisions:divisions.map(d=>d.id===div.id?{...d,teams:[...d.teams,newTeam]}:d),
-      registrations:(tournament.registrations||[]).map(r=>r.id===reg.id?{...r,status:"approved",teamId:newTeam.id}:r),
+      divisions:divisions.map(d=>d.id===div.id
+        ?{...d,teams:[...d.teams,newTeam]}
+        :d),
+      registrations:(tournament.registrations||[]).map(r=>
+        r.id===reg.id?{...r,status:"approved",teamId:teamId}:r),
     };
     onUpdateTournament(updated);
   };
@@ -4212,9 +4250,9 @@ const THREEV3_DIVISIONS = [
 ];
 
 // ─── 3V3 REGISTRATION FORM ────────────────────────────────────────────────────
-function ThreevThreeForm({onBack, logoUrl}) {
+function ThreevThreeForm({onBack, logoUrl, data, onSubmit}) {
   const [form, setForm] = useState({
-    teamName:"", division:"", email:"", phone:"",
+    teamName:"", division:"", tournamentId:"", email:"", phone:"",
     player1:"", player2:"", player3:"",
     player4:"", player5:"",
     agreed:false,
@@ -4223,6 +4261,9 @@ function ThreevThreeForm({onBack, logoUrl}) {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const upd = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  // Only show 3v3 tournaments
+  const tournaments3v3 = (data?.tournaments||[]).filter(t=>t.type==="3v3"&&t.status!=="complete");
 
   const validate = () => {
     const e = {};
@@ -4242,19 +4283,38 @@ function ThreevThreeForm({onBack, logoUrl}) {
     if (!validate()) return;
     setSubmitting(true);
 
-    // Build players list
     const players = [form.player1, form.player2, form.player3, form.player4, form.player5]
       .filter(p=>p.trim())
       .map((p,i)=>`${i+1}. ${p.trim()}`)
       .join("\n");
 
     const div = THREEV3_DIVISIONS.find(d=>d.id===form.division);
+    const selTournament = tournaments3v3.find(t=>t.id===parseInt(form.tournamentId)) || tournaments3v3[0];
+
+    // Save registration to Supabase
+    const reg = {
+      id: Date.now(),
+      tournamentId: selTournament?.id,
+      tournamentName: selTournament?.name || "3v3 Tournament",
+      teamName: form.teamName.trim(),
+      coachName: form.teamName.trim(),
+      phone: form.phone.trim(),
+      email: form.email.trim(),
+      gradeId: form.division,
+      gender: div?.label || form.division,
+      status: "pending",
+      paymentStatus: "unpaid",
+      submittedAt: new Date().toISOString(),
+      type: "3v3",
+      players: [form.player1,form.player2,form.player3,form.player4,form.player5].filter(p=>p.trim()),
+    };
+    if (onSubmit) await onSubmit(reg);
 
     // Send admin notification
     await sendEmail(EJS.adminTemplate, {
-      tournament_name:  "3v3 Tournament",
-      tournament_dates: "TBD",
-      location:         "Fenton, MI",
+      tournament_name:  selTournament?.name || "3v3 Tournament",
+      tournament_dates: selTournament ? tDates(selTournament).map(fmtD).join(" → ") : "TBD",
+      location:         selTournament?.location || "Fenton, MI",
       coach_name:       form.teamName.trim(),
       coach_email:      form.email.trim(),
       coach_phone:      form.phone.trim(),
@@ -4267,9 +4327,9 @@ function ThreevThreeForm({onBack, logoUrl}) {
     await sendEmail(EJS.coachTemplate, {
       coach_name:       form.teamName.trim(),
       coach_email:      form.email.trim(),
-      tournament_name:  "3v3 Tournament",
-      tournament_dates: "TBD",
-      location:         "Fenton, MI",
+      tournament_name:  selTournament?.name || "3v3 Tournament",
+      tournament_dates: selTournament ? tDates(selTournament).map(fmtD).join(" → ") : "TBD",
+      location:         selTournament?.location || "Fenton, MI",
       teams_list:       `Team: ${form.teamName}\nDivision: ${div?.label||form.division}\n\nPlayers:\n${players}`,
       team_count:       "1",
       payment_link:     PAYMENT_LINK,
@@ -4363,6 +4423,20 @@ function ThreevThreeForm({onBack, logoUrl}) {
             <div style={{color:C.gray,fontSize:13}}>Shoebox Sports · Fenton, MI</div>
           </div>
         </div>
+
+        {/* Tournament selector */}
+        {tournaments3v3.length>1&&(
+          <div style={{marginBottom:16}}>
+            <div style={{color:C.gray,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Select Tournament</div>
+            <select value={form.tournamentId} onChange={e=>upd("tournamentId",e.target.value)}
+              style={{width:"100%",background:"#0F3460",border:`1px solid ${C.grayL}`,borderRadius:8,
+                color:C.white,fontSize:14,padding:"11px 14px",outline:"none",fontFamily:"inherit"}}>
+              <option value="">Select a tournament...</option>
+              {tournaments3v3.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+        )}
+
         {/* Division selector */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           {THREEV3_DIVISIONS.map(d=>(
@@ -5827,7 +5901,7 @@ export default function App() {
   };
 
   const onDeleteTournament=async(tId)=>{
-    await sbFetch(`/tournaments?id=eq.${tId}`,{method:"DELETE"});
+    await sbSecure(`/tournaments?id=eq.${tId}`,{method:"DELETE"});
     setData(d=>({...d,tournaments:d.tournaments.filter(x=>x.id!==tId)}));
   };
 
@@ -5946,7 +6020,7 @@ export default function App() {
   if (show3v3) return (
     <div style={{background:C.navy,minHeight:"100vh"}}>
       <PublicHeader onBack={()=>setShow3v3(false)}/>
-      <ThreevThreeForm onBack={()=>setShow3v3(false)} logoUrl={logoUrl}/>
+      <ThreevThreeForm onBack={()=>setShow3v3(false)} logoUrl={logoUrl} data={data} onSubmit={onSubmitRegistration}/>
     </div>
   );
 
