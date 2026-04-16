@@ -2626,12 +2626,15 @@ function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, 
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm]     = useState({name:"",email:"",phone:"",sessionId:"1on1",time:"4:00 PM"});
   const [localSched, setLocalSched] = useState(schedule);
+  useEffect(()=>{ setLocalSched(s=>({...schedule,...s,groupSlots:schedule?.groupSlots||s?.groupSlots||[]})); },[schedule]);
   const upd = (k,v) => setAddForm(f=>({...f,[k]:v}));
 
   const dates = getUpcomingDates(28);
   const selDateObj = dates.find(d=>dateKey(d)===selDate) || new Date(selDate+"T12:00:00");
   const selDow = DAYS_OF_WEEK[selDateObj.getDay()];
-  const allSlots = isWeekend(selDateObj) ? WEEKEND_SLOTS : WEEKDAY_SLOTS;
+  const allSlots = isWeekend(selDateObj)
+    ? (localSched?.availability?.[selDow]||WEEKEND_SLOTS)
+    : (localSched?.weekdaySlots?.[selDow]||WEEKDAY_SLOTS_ALL);
   const todayBookings = bookings.filter(b=>b.date===selDate&&b.status!=="cancelled");
   const blockedSlots = (localSched?.blocked||[]).filter(b=>b.date===selDate).map(b=>b.time);
   const bookedSlots = todayBookings.map(b=>b.time);
@@ -2943,15 +2946,15 @@ function CoachDashboard({bookings, schedule, onUpdateBooking, onUpdateSchedule, 
           <div style={{color:C.gray,fontSize:13,marginBottom:16,lineHeight:1.6}}>
             Your recurring group training slots. Add players and create new groups here.
           </div>
-          {(schedule?.groupSlots||[]).length===0&&<div style={{textAlign:"center",padding:"32px 0"}}>
+          {(localSched?.groupSlots||[]).length===0&&<div style={{textAlign:"center",padding:"32px 0"}}>
             <div style={{fontSize:36,marginBottom:10}}>👥</div>
             <div style={{color:C.white,fontWeight:700,fontSize:17,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:6}}>No Group Slots Yet</div>
             <div style={{color:C.gray,fontSize:13}}>Create a group using the form below</div>
           </div>}
-          {(schedule?.groupSlots||[]).map((gs,gi)=>(
-            <GroupSlotCard key={gs.id} gs={gs} gi={gi} schedule={schedule} onUpdateSchedule={onUpdateSchedule} showRemove={false}/>
+          {(localSched?.groupSlots||[]).map((gs,gi)=>(
+            <GroupSlotCard key={gs.id} gs={gs} gi={gi} schedule={localSched} onUpdateSchedule={(ns)=>{setLocalSched(ns);onUpdateSchedule(ns);}} showRemove={true} localSched={localSched} setLocalSched={setLocalSched}/>
           ))}
-          <GroupCreateForm schedule={schedule} onUpdateSchedule={onUpdateSchedule} isCoach={true}/>
+          <GroupCreateForm localSched={localSched} setLocalSched={setLocalSched} onUpdateSchedule={(ns)=>{setLocalSched(ns);onUpdateSchedule(ns);}} isCoach={false}/>
         </>}
 
       </div>
@@ -4491,7 +4494,9 @@ const SESSIONS = [
   {id:"1on1", label:"1-on-1 Session", price:60, desc:"Private 1 hour session"},
   {id:"group", label:"Group Session",  price:50, desc:"Group 1 hour session"},
 ];
-const WEEKDAY_SLOTS = ["4:00 PM","5:00 PM","6:00 PM","7:00 PM"];
+// All possible weekday 1-on-1 slots (3:15pm–8:15pm, 15-min increments)
+const WEEKDAY_SLOTS_ALL = buildSlots("3:15 PM", 21, 15); // 3:15,3:30,...8:15
+const WEEKDAY_SLOTS = WEEKDAY_SLOTS_ALL; // kept for backwards compat
 const WEEKEND_SLOTS = ["8:00 AM","9:00 AM","10:00 AM","11:00 AM","12:00 PM",
   "1:00 PM","2:00 PM","3:00 PM","4:00 PM","5:00 PM","6:00 PM","7:00 PM"];
 const DAYS_OF_WEEK = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -4783,11 +4788,18 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
     if(!d) return [];
     const key = dateKey(d);
     const dow = d.getDay();
-    let base = isWeekday(d) ? WEEKDAY_SLOTS : (schedule?.availability?.[DAYS_OF_WEEK[dow]]||[]);
+    const dayName = DAYS_OF_WEEK[dow];
+    // Weekdays: use coach-set per-day availability, fall back to all slots if not set
+    // Weekends: use coach-set weekend availability
+    let base;
+    if(isWeekday(d)) {
+      base = schedule?.weekdaySlots?.[dayName] || WEEKDAY_SLOTS_ALL;
+    } else {
+      base = schedule?.availability?.[dayName] || [];
+    }
     const blocked = (schedule?.blocked||[]).filter(b=>b.date===key).map(b=>b.time);
     const booked  = bookings.filter(b=>b.date===key&&b.status!=="cancelled").map(b=>b.time);
     const alreadyPicked = selections.filter(s=>s.date===key).map(s=>s.time);
-    // Also block any times reserved for group sessions
     const groupTimes = getGroupBlockedTimes(d);
     return base.filter(s=>!blocked.includes(s)&&!booked.includes(s)&&!alreadyPicked.includes(s)&&!groupTimes.includes(s));
   };
@@ -5345,7 +5357,9 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
     setShowScheduleModal(false);
   };
 
-  const allSlots=isWeekend(selDateObj)?WEEKEND_SLOTS:WEEKDAY_SLOTS;
+  const allSlots=isWeekend(selDateObj)
+    ?(localSched?.availability?.[selDowAdmin]||WEEKEND_SLOTS)
+    :(localSched?.weekdaySlots?.[selDowAdmin]||WEEKDAY_SLOTS_ALL);
   const selDowAdmin=DAYS_OF_WEEK[selDateObj.getDay()];
   const groupSlotsAdmin=(localSched?.groupSlots||[]).filter(gs=>{
     if(!gs.endDate||new Date(gs.endDate+"T23:59:59")<new Date()) return false;
@@ -5543,29 +5557,50 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
       </>}
 
       {/* ── AVAILABILITY TAB ── */}
-      {/* ── AVAILABILITY TAB ── */}
       {tab==="availability"&&<>
         <div style={{color:C.gray,fontSize:13,marginBottom:20,lineHeight:1.6}}>
-          Set recurring weekly hours for Coach Star. Mon–Fri 4pm–8pm is always on. Toggle Saturday & Sunday slots below — they repeat automatically every week.
+          Set which time slots Coach Star offers for 1-on-1 sessions each day. Weekdays are in 15-min increments from 3:15pm–8:15pm. Weekend slots are set separately below.
         </div>
-        <div style={{background:C.navyMid,borderRadius:12,padding:20,border:`1px solid ${C.grayL}`}}>
-          {["Saturday","Sunday"].map(day=>{
-            const slots=localSched?.availability?.[day]||[];
+
+        {/* Weekday 1-on-1 slots */}
+        <div style={{background:C.navyMid,borderRadius:12,padding:18,marginBottom:16,border:`1px solid ${C.grayL}`}}>
+          <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>
+            📅 Weekday 1-on-1 Hours (Mon–Fri)
+          </div>
+          <div style={{color:C.gray,fontSize:12,marginBottom:16}}>
+            Toggle which time slots to offer each day. Each slot is 1 hour.
+          </div>
+          {["Monday","Tuesday","Wednesday","Thursday","Friday"].map(day=>{
+            const daySlots=localSched?.weekdaySlots?.[day]||[];
+            const allOn=WEEKDAY_SLOTS_ALL.every(s=>daySlots.includes(s));
             return (
-              <div key={day} style={{marginBottom:20}}>
-                <div style={{color:C.white,fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:12}}>{day}</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-                  {WEEKEND_SLOTS.map(s=>{
-                    const on=slots.includes(s);
+              <div key={day} style={{marginBottom:16,background:C.navy,borderRadius:10,padding:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{color:C.white,fontWeight:800,fontSize:14,fontFamily:"'Barlow Condensed',sans-serif"}}>{day}</div>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <span style={{color:C.gray,fontSize:11}}>{daySlots.length} slot{daySlots.length!==1?"s":""} selected</span>
+                    <button onClick={()=>{
+                      const cur=localSched?.weekdaySlots||{};
+                      const newSlots=allOn?[]:[...WEEKDAY_SLOTS_ALL];
+                      setLocalSched(p=>({...p,weekdaySlots:{...cur,[day]:newSlots}}));
+                    }} style={{background:"transparent",border:`1px solid ${C.grayL}`,borderRadius:6,
+                      color:C.gray,cursor:"pointer",fontSize:11,padding:"3px 10px",fontWeight:600}}>
+                      {allOn?"Clear all":"Select all"}
+                    </button>
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5}}>
+                  {WEEKDAY_SLOTS_ALL.map(s=>{
+                    const on=daySlots.includes(s);
                     return (
                       <button key={s} onClick={()=>{
-                        const cur=localSched?.availability||{};
-                        const ds2=cur[day]||[];
-                        const ns2=on?ds2.filter(x=>x!==s):[...ds2,s].sort((a,b)=>toMins(a)-toMins(b));
-                        setLocalSched(p=>({...p,availability:{...cur,[day]:ns2}}));
-                      }} style={{padding:"10px 6px",borderRadius:8,cursor:"pointer",textAlign:"center",
-                        border:`2px solid ${on?C.sky:C.grayL}`,background:on?C.sky+"22":C.navy,
-                        color:on?C.sky:C.gray,fontWeight:700,fontSize:12,transition:"all 0.15s"}}>
+                        const cur=localSched?.weekdaySlots||{};
+                        const ds=cur[day]||[];
+                        const ns=on?ds.filter(x=>x!==s):[...ds,s].sort((a,b)=>toMins(a)-toMins(b));
+                        setLocalSched(p=>({...p,weekdaySlots:{...cur,[day]:ns}}));
+                      }} style={{padding:"7px 3px",borderRadius:7,cursor:"pointer",textAlign:"center",
+                        border:`2px solid ${on?C.sky:C.grayL}`,background:on?C.sky+"22":C.navyMid,
+                        color:on?C.sky:C.gray,fontWeight:700,fontSize:10,transition:"all 0.1s"}}>
                         {on?"✓ ":""}{s}
                       </button>
                     );
@@ -5574,13 +5609,48 @@ function AdminBookings({bookings, schedule, onUpdateBooking, onDeleteBooking, on
               </div>
             );
           })}
-          <div style={{background:C.sky+"11",border:`1px solid ${C.sky}33`,borderRadius:10,padding:"10px 14px",marginBottom:14}}>
-            <div style={{color:C.sky,fontSize:12,fontWeight:600}}>
-              💡 Mon–Fri 4:00 PM – 7:00 PM is always available and cannot be toggled off here. Block specific days on the Calendar tab.
-            </div>
+          <Btn v="pri" onClick={async()=>{await saveSchedule(localSched);onUpdateSchedule(localSched);}}
+            sx={{width:"100%",padding:"12px 0",fontSize:14}}>
+            💾 Save Weekday Hours
+          </Btn>
+        </div>
+
+        {/* Weekend slots */}
+        <div style={{background:C.navyMid,borderRadius:12,padding:18,border:`1px solid ${C.grayL}`}}>
+          <div style={{color:C.sky,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>
+            📅 Weekend Hours (Sat–Sun)
           </div>
-          <Btn v="pri" onClick={async()=>{await saveSchedule(localSched);onUpdateSchedule(localSched);}} sx={{width:"100%",padding:"12px 0",fontSize:14}}>
-            💾 Save Weekend Availability
+          <div style={{color:C.gray,fontSize:12,marginBottom:16}}>
+            Toggle Saturday and Sunday time slots — they repeat every week automatically.
+          </div>
+          {["Saturday","Sunday"].map(day=>{
+            const slots=localSched?.availability?.[day]||[];
+            return (
+              <div key={day} style={{marginBottom:16}}>
+                <div style={{color:C.white,fontWeight:800,fontSize:14,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:10}}>{day}</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+                  {WEEKEND_SLOTS.map(s=>{
+                    const on=slots.includes(s);
+                    return (
+                      <button key={s} onClick={()=>{
+                        const cur=localSched?.availability||{};
+                        const ds2=cur[day]||[];
+                        const ns2=on?ds2.filter(x=>x!==s):[...ds2,s].sort((a,b)=>toMins(a)-toMins(b));
+                        setLocalSched(p=>({...p,availability:{...cur,[day]:ns2}}));
+                      }} style={{padding:"9px 4px",borderRadius:8,cursor:"pointer",textAlign:"center",
+                        border:`2px solid ${on?C.gold:C.grayL}`,background:on?C.gold+"22":C.navy,
+                        color:on?C.gold:C.gray,fontWeight:700,fontSize:11,transition:"all 0.15s"}}>
+                        {on?"✓ ":""}{s}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          <Btn v="pri" onClick={async()=>{await saveSchedule(localSched);onUpdateSchedule(localSched);}}
+            sx={{width:"100%",padding:"12px 0",fontSize:14}}>
+            💾 Save Weekend Hours
           </Btn>
         </div>
       </>}
