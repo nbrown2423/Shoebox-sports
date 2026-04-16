@@ -3466,36 +3466,54 @@ const SUPABASE_SERVICE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_KEY;
 
 // Public fetch — used for tournaments and registrations
 async function sbFetch(path, opts={}) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    ...opts,
-    headers: {
-      "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
-      "Content-Type": "application/json",
-      "Prefer": opts.prefer || "",
-      ...opts.headers,
-    },
-  });
-  if (!res.ok) return null;
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+      ...opts,
+      headers: {
+        "apikey": SUPABASE_KEY,
+        "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": opts.prefer || "",
+        ...opts.headers,
+      },
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`sbFetch error [${opts.method||"GET"} ${path}]: ${res.status} — ${err}`);
+      return null;
+    }
+    const text = await res.text();
+    return text ? JSON.parse(text) : true;
+  } catch(e) {
+    console.error(`sbFetch exception [${path}]:`, e);
+    return null;
+  }
 }
 
 // Secure fetch — used for bookings and coach schedule (bypasses RLS)
 async function sbSecure(path, opts={}) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
-    ...opts,
-    headers: {
-      "apikey": SUPABASE_SERVICE_KEY,
-      "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
-      "Content-Type": "application/json",
-      "Prefer": opts.prefer || "",
-      ...opts.headers,
-    },
-  });
-  if (!res.ok) return null;
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1${path}`, {
+      ...opts,
+      headers: {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+        "Content-Type": "application/json",
+        "Prefer": opts.prefer || "",
+        ...opts.headers,
+      },
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`sbSecure error [${opts.method||"GET"} ${path}]: ${res.status} — ${err}`);
+      return null;
+    }
+    const text = await res.text();
+    return text ? JSON.parse(text) : true; // return true for 204 No Content
+  } catch(e) {
+    console.error(`sbSecure exception [${path}]:`, e);
+    return null;
+  }
 }
 
 async function loadFromDB() {
@@ -4048,14 +4066,14 @@ function AdminRegistrations({tournament, onUpdateTournament}) {
     return divMatch&&statusMatch;
   });
 
-  const updateReg=(regId,changes)=>{
+  const updateReg=async(regId,changes)=>{
     const updated={...tournament,registrations:(tournament.registrations||[]).map(r=>r.id===regId?{...r,...changes}:r)};
-    onUpdateTournament(updated);
+    await onUpdateTournament(updated);
   };
 
-  const deleteReg=(regId)=>{
+  const deleteReg=async(regId)=>{
     const updated={...tournament,registrations:(tournament.registrations||[]).filter(r=>r.id!==regId)};
-    onUpdateTournament(updated);
+    await onUpdateTournament(updated);
   };
 
   const approveAndAdd=(reg)=>{
