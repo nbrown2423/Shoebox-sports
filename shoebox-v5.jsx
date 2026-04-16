@@ -2519,9 +2519,7 @@ function PendingBookings({bookings, onUpdateBooking}) {
     const updated = {...b, status:"confirmed"};
     await updateBooking(updated);
     onUpdateBooking(updated, "update");
-    await sendEmail(EJS.coachTemplate, {
-      coach_name: b.clientName, coach_email: b.clientEmail,
-      tournament_name: `Training Session Confirmed — ${COACH_NAME}`,
+    await sendEmail(EJS.approvedTemplate, {
       tournament_dates: b.dateLabel ? `${b.dateLabel} at ${b.time}` : `${b.groupName||""} at ${b.time}`,
       location: "Shoebox Sports - Fenton, MI",
       teams_list: `✓ Your booking has been APPROVED!\nSession: ${b.sessionLabel}\nDate: ${b.dateLabel||"Recurring"} at ${b.time}\nSee you there!`,
@@ -2534,12 +2532,12 @@ function PendingBookings({bookings, onUpdateBooking}) {
     const updated = {...b, status:"declined", declineReason: msg};
     await updateBooking(updated);
     onUpdateBooking(updated, "update");
-    await sendEmail(EJS.coachTemplate, {
+    await sendEmail(EJS.declinedTemplate, {
       coach_name: b.clientName, coach_email: b.clientEmail,
-      tournament_name: `Booking Update — ${COACH_NAME}`,
+      tournament_name: b.sessionLabel,
       tournament_dates: b.dateLabel ? `${b.dateLabel} at ${b.time}` : `${b.time}`,
       location: "Shoebox Sports - Fenton, MI",
-      teams_list: `Your booking request could not be confirmed at this time.\nSession: ${b.sessionLabel}\nDate: ${b.dateLabel||"Recurring"} at ${b.time}${msg ? `\n\nReason: ${msg}` : ""}\n\nPlease feel free to book another available time.`,
+      teams_list: msg ? `Reason: ${msg}` : "No reason provided.",
       team_count: "1",
       payment_link: "N/A",
     });
@@ -3581,10 +3579,14 @@ const PAYMENT_LINK = "https://theshoeboxsports.cloveronline.com/";
 const PAYMENT_LABEL = "theshoeboxsports.cloveronline.com";
 // ─── EMAILJS CONFIG ───────────────────────────────────────────────────────────
 const EJS = {
-  serviceId:      "service_5zrpxvj",
-  adminTemplate:  "template_l2hcfe7",   // → Info@theshoeboxsports.com (Coach Star/Admin)
-  coachTemplate:  "template_yykska3",   // → customer's email
-  publicKey:      "iFaGCl_1cFBylbGdi",
+  serviceId:              "service_5zrpxvj",
+  bookingRequestTemplate: "template_zjkndgr",  // → customer: booking request received
+  trainingRequestTemplate:"template_l2hcfe7",  // → Coach Star/Admin: new booking notification
+  approvedTemplate:       "template_h6s6hlk",  // → customer: session approved
+  declinedTemplate:       "template_471677p",  // → customer: session declined
+  coachTemplate:          "template_xzsta4c",  // → coach/team: new tournament registration
+  adminTemplate:          "template_yykska3",  // → admin: new team registered
+  publicKey:              "iFaGCl_1cFBylbGdi",
 };
 
 async function sendEmail(templateId, params) {
@@ -3696,7 +3698,6 @@ function RegistrationForm({data, onSubmit, onBack}) {
 
     // Send admin notification email
     await sendEmail(EJS.adminTemplate, {
-      tournament_name:  selTournament.name,
       tournament_dates: tournamentDates,
       location:         selTournament.location,
       coach_name:       form.coachName.trim(),
@@ -4846,7 +4847,8 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
         status:"confirmed", bookedAt:new Date().toISOString(),
       };
       await onSubmit(booking, ns);
-      await sendEmail(EJS.adminTemplate,{
+      // → Coach Star/Admin: new training session notification
+      await sendEmail(EJS.trainingRequestTemplate,{
         tournament_name:"Group Training Registration",
         tournament_dates:`Every ${selectedGroup.day} at ${selectedGroup.time} (until ${fmtD(selectedGroup.endDate)})`,
         location:"Shoebox Sports - Fenton, MI",
@@ -4854,7 +4856,8 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
         teams_list:`Group: ${selectedGroup.name}\nDay: Every ${selectedGroup.day} at ${selectedGroup.time}\nUntil: ${fmtD(selectedGroup.endDate)}\nPayment: ${form.payMethod==="online"?"Online (Clover)":"In Person"}`,
         team_count:"1", submitted_at:new Date().toLocaleString(),
       });
-      await sendEmail(EJS.coachTemplate,{
+      // → Customer: booking request received
+      await sendEmail(EJS.bookingRequestTemplate,{
         coach_name:form.name.trim(), coach_email:form.email.trim(),
         tournament_name:`Group Training: ${selectedGroup.name}`,
         tournament_dates:`Every ${selectedGroup.day} at ${selectedGroup.time}`,
@@ -4878,14 +4881,16 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
         await onSubmit(booking);
       }
       const sessionList = selections.map(s=>`${s.dateLabel} at ${s.time}`).join(", ");
-      await sendEmail(EJS.adminTemplate,{
+      // → Coach Star/Admin: new training session notification
+      await sendEmail(EJS.trainingRequestTemplate,{
         tournament_name:"Training Session Booking",
         tournament_dates:sessionList, location:"Shoebox Sports - Fenton, MI",
         coach_name:form.name.trim(), coach_email:form.email.trim(), coach_phone:form.phone.trim(),
         teams_list:`Session: ${session.label} ($${session.price} each)\nDates: ${sessionList}\nPayment: ${form.payMethod==="online"?"Online (Clover)":"In Person"}`,
         team_count:String(selections.length), submitted_at:new Date().toLocaleString(),
       });
-      await sendEmail(EJS.coachTemplate,{
+      // → Customer: booking request received
+      await sendEmail(EJS.bookingRequestTemplate,{
         coach_name:form.name.trim(), coach_email:form.email.trim(),
         tournament_name:`Training Sessions with ${COACH_NAME}`,
         tournament_dates:sessionList, location:"Shoebox Sports - Fenton, MI",
