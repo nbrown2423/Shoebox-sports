@@ -4990,12 +4990,11 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
       </div>
       </div>{/* end maxWidth wrapper */}
 
-      {/* Steps content — full width container so date strip can scroll edge to edge */}
-      <div style={{maxWidth:560,margin:"0 auto"}}>
+      {/* Steps content */}
       <div style={{padding:"0"}}>
 
         {/* STEP 1 — Session Type */}
-        {step===1&&<div style={{padding:"20px 20px 20px"}}>
+        {step===1&&<div style={{padding:"20px 20px 20px",maxWidth:560,margin:"0 auto"}}>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Choose Session Type</div>
           <div style={{color:C.gray,fontSize:13,marginBottom:20}}>All sessions are 1 hour</div>
           {SESSIONS.map(s=>(
@@ -5079,7 +5078,7 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
 
         {/* STEP 2 — Dates & Times */}
         {step===2&&<>
-          <div style={{padding:"20px 20px 0"}}>
+          <div style={{padding:"20px 20px 0",maxWidth:560,margin:"0 auto"}}>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Pick Dates & Times</div>
           <div style={{color:C.gray,fontSize:13,marginBottom:16}}>Select as many sessions as you want · Up to 60 days out</div>
 
@@ -5138,7 +5137,7 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
             </div>
           </div>
 
-          <div style={{padding:"0 20px"}}>
+          <div style={{padding:"0 20px",maxWidth:560,margin:"0 auto"}}>
           {/* Time slots for active date */}
           {activeDate&&(()=>{
             const slots=getSlotsForDate(activeDate);
@@ -5184,7 +5183,7 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
         </>}
 
         {/* STEP 3 — Info */}
-        {step===3&&<div style={{padding:"20px 20px 20px"}}>
+        {step===3&&<div style={{padding:"20px 20px 20px",maxWidth:560,margin:"0 auto"}}>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:16}}>Your Information</div>
           {[{k:"name",l:"Full Name *",p:"Your full name",type:"text"},{k:"email",l:"Email Address *",p:"yourname@email.com",type:"email"},{k:"phone",l:"Phone Number *",p:"(555) 555-5555",type:"tel"}].map(({k,l,p,type})=>(
             <div key={k} style={{marginBottom:14}}>
@@ -5239,7 +5238,7 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
         </div>}
 
         {/* STEP 4 — Payment */}
-        {step===4&&<div style={{padding:"20px 20px 20px"}}>
+        {step===4&&<div style={{padding:"20px 20px 20px",maxWidth:560,margin:"0 auto"}}>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Payment Method</div>
           <div style={{color:C.gray,fontSize:13,marginBottom:20}}>
             {session?.id==="group"&&selectedGroup
@@ -5275,7 +5274,6 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
         </div>}
 
       </div>
-      </div>{/* end second maxWidth wrapper */}
     </div>
   );
 }
