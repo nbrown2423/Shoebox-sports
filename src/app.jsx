@@ -5102,53 +5102,73 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
           )}
           </div>
 
-          {/* Date strip — full width, no side padding on wrapper so it goes edge to edge */}
-          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",marginBottom:16}}>
-            <div style={{display:"flex",gap:8,padding:"0 20px 10px",width:"max-content",minWidth:"100%"}}>
-              {dates.map(d=>{
-                const key=dateKey(d);
-                const slots=getSlotsForDate(d);
-                const selCount=selections.filter(s=>s.date===key).length;
-                const hasSlots=slots.length>0||selCount>0;
-                const isActive=activeDate&&dateKey(activeDate)===key;
-                const isFirstOfMonth=d.getDate()===1||dates.indexOf(d)===0;
-                return (
-                  <div key={key} style={{flexShrink:0,textAlign:"center",cursor:hasSlots?"pointer":"default",width:56}}
-                    onClick={()=>{if(!hasSlots&&selCount===0)return;setActiveDate(d);}}>
-                    <div style={{color:C.gold,fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:3,height:13}}>
-                      {isFirstOfMonth?d.toLocaleDateString("en-US",{month:"short"}):""}
+          <div style={{padding:"0 20px",maxWidth:560,margin:"0 auto"}}>
+
+          {/* 8-per-row date grid */}
+          <div style={{marginBottom:16}}>
+            {Array.from({length:Math.ceil(dates.length/8)},(_,rowIdx)=>{
+              const rowDates=dates.slice(rowIdx*8,rowIdx*8+8);
+              const firstDate=rowDates[0];
+              const showMonth=rowIdx===0||firstDate.getMonth()!==dates[rowIdx*8-1]?.getMonth();
+              return (
+                <div key={rowIdx} style={{marginBottom:6}}>
+                  {showMonth&&(
+                    <div style={{color:C.gold,fontSize:11,fontWeight:700,textTransform:"uppercase",
+                      letterSpacing:"0.08em",marginBottom:6,marginTop:rowIdx>0?10:0}}>
+                      {firstDate.toLocaleDateString("en-US",{month:"long",year:"numeric"})}
                     </div>
-                    <div style={{background:isActive?C.sky:selCount>0?C.green+"33":hasSlots?C.navyMid:C.grayD,
-                      borderRadius:10,padding:"9px 4px",
-                      border:`2px solid ${isActive?C.sky:selCount>0?C.green:hasSlots?C.grayL:C.grayD}`,
-                      opacity:hasSlots||selCount>0?1:0.35}}>
-                      <div style={{color:isActive?"#fff":selCount>0?C.green:C.gray,fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:2}}>
-                        {DAYS_OF_WEEK[d.getDay()].slice(0,3)}
-                      </div>
-                      <div style={{color:isActive?"#fff":C.white,fontWeight:800,fontSize:16,margin:"2px 0"}}>{d.getDate()}</div>
-                      {selCount>0
-                        ?<div style={{background:C.green,borderRadius:50,width:16,height:16,margin:"2px auto 0",
-                            display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:800}}>{selCount}</div>
-                        :<div style={{color:isActive?"rgba(255,255,255,0.7)":C.gray,fontSize:8,marginTop:2}}>{hasSlots?`${slots.length}`:"–"}</div>}
-                    </div>
+                  )}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:4}}>
+                    {rowDates.map(d=>{
+                      const key=dateKey(d);
+                      const slots=getSlotsForDate(d);
+                      const selCount=selections.filter(s=>s.date===key).length;
+                      const hasSlots=slots.length>0||selCount>0;
+                      const isActive=activeDate&&dateKey(activeDate)===key;
+                      return (
+                        <div key={key} onClick={()=>{if(!hasSlots&&!selCount)return;setActiveDate(isActive?null:d);}}
+                          style={{background:isActive?C.sky:selCount>0?C.green+"33":hasSlots?C.navyMid:C.grayD,
+                            borderRadius:8,padding:"8px 2px",textAlign:"center",
+                            cursor:hasSlots||selCount>0?"pointer":"default",
+                            border:`2px solid ${isActive?C.sky:selCount>0?C.green:hasSlots?C.grayL:C.grayD}`,
+                            opacity:hasSlots||selCount>0?1:0.3}}>
+                          <div style={{color:isActive?"#fff":selCount>0?C.green:C.gray,
+                            fontSize:8,fontWeight:700,textTransform:"uppercase",marginBottom:1}}>
+                            {DAYS_OF_WEEK[d.getDay()].slice(0,2)}
+                          </div>
+                          <div style={{color:isActive?"#fff":C.white,fontWeight:800,fontSize:14}}>
+                            {d.getDate()}
+                          </div>
+                          {selCount>0
+                            ?<div style={{background:C.green,borderRadius:50,width:14,height:14,
+                                margin:"2px auto 0",display:"flex",alignItems:"center",
+                                justifyContent:"center",color:"#fff",fontSize:8,fontWeight:800}}>{selCount}</div>
+                            :<div style={{color:isActive?"rgba(255,255,255,0.6)":C.gray,fontSize:7,marginTop:1}}>
+                              {hasSlots?`${slots.length}`:"–"}
+                            </div>}
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
 
-          <div style={{padding:"0 20px",maxWidth:560,margin:"0 auto"}}>
-          {/* Time slots for active date */}
+          {/* Time slots for selected date */}
           {activeDate&&(()=>{
             const slots=getSlotsForDate(activeDate);
             const key=dateKey(activeDate);
             return (
               <div style={{background:C.navyMid,borderRadius:12,padding:16,marginBottom:16,border:`1px solid ${C.sky}44`}}>
-                <div style={{color:C.gold,fontWeight:800,fontSize:13,marginBottom:12,fontFamily:"'Barlow Condensed',sans-serif"}}>
+                <div style={{color:C.gold,fontWeight:800,fontSize:13,marginBottom:12,
+                  fontFamily:"'Barlow Condensed',sans-serif"}}>
                   {fmtDate(activeDate)}
                 </div>
                 {slots.length===0&&selections.filter(s=>s.date===key).length===0?(
-                  <div style={{color:C.gray,fontSize:13,textAlign:"center",padding:"12px 0"}}>No available slots this day</div>
+                  <div style={{color:C.gray,fontSize:13,textAlign:"center",padding:"12px 0"}}>
+                    No available slots this day
+                  </div>
                 ):(
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
                     {[...WEEKDAY_SLOTS,...WEEKEND_SLOTS]
