@@ -3578,8 +3578,8 @@ async function saveSchedule(sched) {
 }
 
 // ─── PUBLIC REGISTRATION FORM ────────────────────────────────────────────────
-const PAYMENT_LINK = "https://theshoeboxsports.cloveronline.com/";
-const PAYMENT_LABEL = "theshoeboxsports.cloveronline.com";
+const PAYMENT_LINK = "https://theshoeboxsports.cloveronline.com/shop#Tournament";
+const PAYMENT_LABEL = "theshoeboxsports.cloveronline.com/shop#Tournament";
 // ─── EMAILJS CONFIG ───────────────────────────────────────────────────────────
 const EJS = {
   serviceId:              "service_5zrpxvj",
