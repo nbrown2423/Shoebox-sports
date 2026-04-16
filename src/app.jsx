@@ -5897,9 +5897,9 @@ export default function App() {
     setData(d=>({...d,tournaments:[...d.tournaments,t]}));
   };
 
-  const onEditTournament=t=>{
-    updateTournamentInDB(t);
+  const onEditTournament=async(t)=>{
     setData(d=>({...d,tournaments:d.tournaments.map(x=>x.id===t.id?t:x)}));
+    await updateTournamentInDB(t);
   };
 
   const onDeleteTournament=async(tId)=>{
@@ -5924,18 +5924,18 @@ export default function App() {
   const onUpdateSchedule=(s)=>setCoachSchedule(s);
 
   const onSubmitRegistration=async(reg)=>{
-    await saveRegistration(reg);
+    // Store registration inside tournament data only (single source of truth)
     setData(d=>({...d,tournaments:d.tournaments.map(t=>{
       if(t.id!==reg.tournamentId) return t;
       const updated={...t,registrations:[...(t.registrations||[]),reg]};
-      updateTournamentInDB(updated);
+      updateTournamentInDB(updated); // persist to DB
       return updated;
     })}));
   };
 
-  const onUpdateTournamentRegs=t=>{
-    updateTournamentInDB(t);
+  const onUpdateTournamentRegs=async(t)=>{
     setData(d=>({...d,tournaments:d.tournaments.map(x=>x.id===t.id?t:x)}));
+    await updateTournamentInDB(t);
   };
 
   // Shared logo header for public pages
