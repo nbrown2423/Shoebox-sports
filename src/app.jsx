@@ -4966,7 +4966,8 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
   );
 
   return (
-    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh",maxWidth:560,margin:"0 auto"}}>
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:C.navy,minHeight:"100vh"}}>
+      <div style={{maxWidth:560,margin:"0 auto"}}>
       <div style={{background:`linear-gradient(135deg,${C.navyLight},${C.navyMid})`,padding:"24px 20px 20px",borderBottom:`1px solid ${C.grayL}`}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
           <div style={{fontSize:32}}>🏋️</div>
@@ -4987,11 +4988,14 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
           ))}
         </div>
       </div>
+      </div>{/* end maxWidth wrapper */}
 
-      <div style={{padding:20}}>
+      {/* Steps content — full width container so date strip can scroll edge to edge */}
+      <div style={{maxWidth:560,margin:"0 auto"}}>
+      <div style={{padding:"0"}}>
 
         {/* STEP 1 — Session Type */}
-        {step===1&&<>
+        {step===1&&<div style={{padding:"20px 20px 20px"}}>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Choose Session Type</div>
           <div style={{color:C.gray,fontSize:13,marginBottom:20}}>All sessions are 1 hour</div>
           {SESSIONS.map(s=>(
@@ -5071,12 +5075,13 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
             sx={{width:"100%",padding:"13px 0",fontSize:15,marginTop:8}}>
             {session?.id==="group"?"Next → Your Info":"Next → Pick Dates & Times"}
           </Btn>
-        </>}
+        </div>}
 
-        {/* STEP 2 — Dates & Times (multi-select) */}
+        {/* STEP 2 — Dates & Times */}
         {step===2&&<>
+          <div style={{padding:"20px 20px 0"}}>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Pick Dates & Times</div>
-          <div style={{color:C.gray,fontSize:13,marginBottom:16}}>Select as many sessions as you like · Up to 60 days out</div>
+          <div style={{color:C.gray,fontSize:13,marginBottom:16}}>Select as many sessions as you want · Up to 60 days out</div>
 
           {/* Selected sessions summary */}
           {selections.length>0&&(
@@ -5096,12 +5101,11 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
               </div>
             </div>
           )}
+          </div>
 
-          {/* Date strip */}
-          <div style={{overflowX:"auto",marginLeft:-20,marginRight:-20,marginBottom:16,
-            WebkitOverflowScrolling:"touch"}}>
-            <div style={{display:"flex",gap:8,paddingLeft:20,paddingRight:20,paddingBottom:8,
-              width:"max-content"}}>
+          {/* Date strip — full width, no side padding on wrapper so it goes edge to edge */}
+          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",marginBottom:16}}>
+            <div style={{display:"flex",gap:8,padding:"0 20px 10px",width:"max-content",minWidth:"100%"}}>
               {dates.map(d=>{
                 const key=dateKey(d);
                 const slots=getSlotsForDate(d);
@@ -5109,14 +5113,13 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
                 const hasSlots=slots.length>0||selCount>0;
                 const isActive=activeDate&&dateKey(activeDate)===key;
                 const isFirstOfMonth=d.getDate()===1||dates.indexOf(d)===0;
-                const monthLabel=isFirstOfMonth?d.toLocaleDateString("en-US",{month:"short"}):"";
                 return (
-                  <div key={key} style={{flexShrink:0,textAlign:"center",cursor:hasSlots?"pointer":"default"}}
+                  <div key={key} style={{flexShrink:0,textAlign:"center",cursor:hasSlots?"pointer":"default",width:56}}
                     onClick={()=>{if(!hasSlots&&selCount===0)return;setActiveDate(d);}}>
-                    {monthLabel
-                      ?<div style={{color:C.gold,fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:3}}>{monthLabel}</div>
-                      :<div style={{height:14}}/>}
-                    <div style={{width:54,background:isActive?C.sky:selCount>0?C.green+"33":hasSlots?C.navyMid:C.grayD,
+                    <div style={{color:C.gold,fontSize:9,fontWeight:700,textTransform:"uppercase",marginBottom:3,height:13}}>
+                      {isFirstOfMonth?d.toLocaleDateString("en-US",{month:"short"}):""}
+                    </div>
+                    <div style={{background:isActive?C.sky:selCount>0?C.green+"33":hasSlots?C.navyMid:C.grayD,
                       borderRadius:10,padding:"9px 4px",
                       border:`2px solid ${isActive?C.sky:selCount>0?C.green:hasSlots?C.grayL:C.grayD}`,
                       opacity:hasSlots||selCount>0?1:0.35}}>
@@ -5127,7 +5130,7 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
                       {selCount>0
                         ?<div style={{background:C.green,borderRadius:50,width:16,height:16,margin:"2px auto 0",
                             display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:800}}>{selCount}</div>
-                        :<div style={{color:isActive?"rgba(255,255,255,0.7)":C.gray,fontSize:9,marginTop:2}}>{hasSlots?`${slots.length} open`:"–"}</div>}
+                        :<div style={{color:isActive?"rgba(255,255,255,0.7)":C.gray,fontSize:8,marginTop:2}}>{hasSlots?`${slots.length}`:"–"}</div>}
                     </div>
                   </div>
                 );
@@ -5135,6 +5138,7 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
             </div>
           </div>
 
+          <div style={{padding:"0 20px"}}>
           {/* Time slots for active date */}
           {activeDate&&(()=>{
             const slots=getSlotsForDate(activeDate);
@@ -5176,10 +5180,11 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
               Next → Your Info {selections.length>0?`(${selections.length} session${selections.length!==1?"s":""})`:""}
             </Btn>
           </div>
+          </div>
         </>}
 
         {/* STEP 3 — Info */}
-        {step===3&&<>
+        {step===3&&<div style={{padding:"20px 20px 20px"}}>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:16}}>Your Information</div>
           {[{k:"name",l:"Full Name *",p:"Your full name",type:"text"},{k:"email",l:"Email Address *",p:"yourname@email.com",type:"email"},{k:"phone",l:"Phone Number *",p:"(555) 555-5555",type:"tel"}].map(({k,l,p,type})=>(
             <div key={k} style={{marginBottom:14}}>
@@ -5231,10 +5236,10 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
             <Btn v="gh" onClick={()=>setStep(session?.id==="group"?1:2)} sx={{flex:1}}>← Back</Btn>
             <Btn v="pri" onClick={()=>{if(validate())setStep(4);}} sx={{flex:2}}>Next → Payment</Btn>
           </div>
-        </>}
+        </div>}
 
         {/* STEP 4 — Payment */}
-        {step===4&&<>
+        {step===4&&<div style={{padding:"20px 20px 20px"}}>
           <div style={{color:C.white,fontWeight:800,fontSize:18,fontFamily:"'Barlow Condensed',sans-serif",marginBottom:4}}>Payment Method</div>
           <div style={{color:C.gray,fontSize:13,marginBottom:20}}>
             {session?.id==="group"&&selectedGroup
@@ -5267,9 +5272,10 @@ function BookingForm({bookings, schedule, onSubmit, onBack, logoUrl}) {
               : `✓ Confirm ${selections.length} Session${selections.length!==1?"s":""}`}
           </Btn>
           <Btn v="gh" onClick={()=>setStep(3)} sx={{width:"100%",padding:"11px 0"}}>← Back</Btn>
-        </>}
+        </div>}
 
       </div>
+      </div>{/* end second maxWidth wrapper */}
     </div>
   );
 }
